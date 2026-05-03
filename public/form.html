@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fuze Ecoteer Team Update Form</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Fuze Ecoteer</p>
+        <h1>Team Update Form</h1>
+      </div>
+      <div class="top-actions">
+        <a class="header-link" href="index.html">View dashboard</a>
+        <div class="tagline">Weekly impact evidence</div>
+      </div>
+    </header>
+
+    <main class="form-page">
+      <div id="syncStatus" class="sync-status">Checking online database...</div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Submit project impact</h2>
+          <select id="projectSelect" aria-label="Project">
+            <option value="PTP">PTP - Turtles</option>
+            <option value="PMRS">PMRS - Marine</option>
+            <option value="PEEP">PEEP - Education</option>
+          </select>
+        </div>
+
+        <form id="teamUpdateForm" class="form-grid">
+          <label>
+            Date
+            <input type="date" name="entry_date" required />
+          </label>
+          <label>
+            Your name
+            <input name="leader" placeholder="Project leader or team member" required />
+          </label>
+          <label>
+            Location
+            <input name="location" placeholder="Beach, reef, village, school" />
+          </label>
+          <label>
+            Activity
+            <select name="activity_type">
+              <option value="Weekly update">Weekly update</option>
+              <option value="Daily update">Daily update</option>
+              <option value="Field survey">Field survey</option>
+              <option value="Beach clean-up">Beach clean-up</option>
+              <option value="Class/session">Class/session</option>
+            </select>
+          </label>
+
+          <div id="metricFields" class="metric-fields"></div>
+
+          <label class="wide">
+            What happened?
+            <textarea name="story_highlight" rows="4" placeholder="Short story or highlight from the activity"></textarea>
+          </label>
+
+          <label class="wide">
+            Why does this matter?
+            <textarea name="impact_message" rows="4" placeholder="Conservation, education, community, youth development, research, or stakeholder impact"></textarea>
+          </label>
+
+          <label>
+            Photo or video link
+            <input name="photo_video_link" placeholder="Google Drive, Instagram, YouTube, etc." />
+          </label>
+          <label>
+            Partner or stakeholder
+            <input name="partner_stakeholder" placeholder="DOF, school, dive centre, PILA..." />
+          </label>
+          <label>
+            Follow-up needed
+            <input name="follow_up_needed" placeholder="Report, thank-you, issue, repair..." />
+          </label>
+
+          <div class="checks wide">
+            <label>
+              <input type="checkbox" name="best_for_social" />
+              Good for social media
+            </label>
+            <label>
+              <input type="checkbox" name="best_for_website" />
+              Good for website/report
+            </label>
+          </div>
+
+          <label class="wide">
+            Internal notes
+            <textarea name="notes" rows="3" placeholder="Anything the manager should know"></textarea>
+          </label>
+
+          <button class="primary" type="submit">Submit update</button>
+        </form>
+      </section>
+
+      <section class="panel success-panel" id="successPanel" hidden>
+        <h2>Update saved</h2>
+        <p>The dashboard has been updated on this computer.</p>
+        <div class="button-row">
+          <a class="button-link" href="form.html">Submit another update</a>
+          <a class="button-link secondary-link" href="index.html">View dashboard</a>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" role="status"></div>
+    <script src="config.js"></script>
+    <script src="supabase.js"></script>
+    <script src="form.js"></script>
+  </body>
+</html>
