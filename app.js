@@ -36,8 +36,13 @@ const copyContent = document.querySelector("#copyContent");
 const contentQueue = document.querySelector("#contentQueue");
 const toast = document.querySelector("#toast");
 const syncStatus = document.querySelector("#syncStatus");
+const dashboardProjectFilter = document.querySelector("#dashboardProjectFilter");
+const periodFilter = document.querySelector("#periodFilter");
+const searchFilter = document.querySelector("#searchFilter");
+const refreshDashboard = document.querySelector("#refreshDashboard");
 const localMode = window.location.protocol === "file:";
 const storeKey = "fuzeImpactDashboard.v1";
+let dashboardData = null;
 
 function defaultStore() {
   return {
@@ -186,78 +191,7 @@ function websiteBlock(entry) {
 
 function buildLocalSummary() {
   const store = loadStore();
-  const totals = {
-    turtles_sighted: 0,
-    turtles_nested: 0,
-    nests: 0,
-    cleanup_kg: 0,
-    cleanup_bags: 0,
-    coral_surveys: 0,
-    students: 0,
-    subjects_taught: 0,
-    classes: 0,
-    volunteers: store.volunteers.length,
-    volunteer_hours: 0,
-  };
-  const byProject = Object.entries(projectNames).map(([code, name]) => ({
-    code,
-    name,
-    entries: 0,
-    volunteers: 0,
-    volunteer_hours: 0,
-    impact_total: 0,
-  }));
-  const projectMap = Object.fromEntries(byProject.map((project) => [project.code, project]));
-
-  store.entries.forEach((entry) => {
-    const project = projectMap[entry.project];
-    if (project) project.entries += 1;
-    const metrics = JSON.parse(entry.metrics_json || "{}");
-    Object.keys(totals).forEach((key) => {
-      if (key === "volunteers" || key === "volunteer_hours") return;
-      const value = Number(metrics[key] || 0);
-      totals[key] += value;
-      if (project) project.impact_total += value;
-    });
-  });
-
-  store.volunteers.forEach((volunteer) => {
-    const project = projectMap[volunteer.project];
-    const hours = Number(volunteer.hours || 0);
-    totals.volunteer_hours += hours;
-    if (project) {
-      project.volunteers += 1;
-      project.volunteer_hours += hours;
-    }
-  });
-
-  const entries = [...store.entries].sort((a, b) => `${b.entry_date}${b.id}`.localeCompare(`${a.entry_date}${a.id}`));
-  return {
-    projects: projectNames,
-    totals,
-    by_project: byProject,
-    entries: entries.slice(0, 25),
-    volunteers: store.volunteers.slice(0, 25),
-    leaders: store.leaders,
-    content_queue: entries
-      .filter((entry) => entry.best_for_social || entry.best_for_website)
-      .slice(0, 12)
-      .map((entry) => ({
-        id: entry.id,
-        project: entry.project,
-        project_name: projectNames[entry.project] || entry.project,
-        entry_date: entry.entry_date,
-        location: entry.location,
-        photo_video_link: entry.photo_video_link,
-        partner_stakeholder: entry.partner_stakeholder,
-        story_highlight: entry.story_highlight,
-        impact_message: entry.impact_message,
-        best_for_social: Boolean(entry.best_for_social),
-        best_for_website: Boolean(entry.best_for_website),
-        social_caption: socialCaption(entry),
-        website_block: websiteBlock(entry),
-      })),
-  };
+  return buildSummary(store.entries, store.volunteers, store.leaders);
 }
 
 function buildSummary(entries, volunteers, leaders) {
@@ -317,7 +251,9 @@ function buildSummary(entries, volunteers, leaders) {
     totals,
     by_project: byProject,
     entries: sortedEntries.slice(0, 25),
+    all_entries: sortedEntries,
     volunteers: normalizedVolunteers.slice(0, 25),
+    all_volunteers: normalizedVolunteers,
     leaders,
     content_queue: sortedEntries
       .filter((entry) => entry.best_for_social || entry.best_for_website)
@@ -353,6 +289,75 @@ function contentUse(entry) {
   return uses.join(" + ") || "Internal";
 }
 
+function entrySearchText(entry) {
+  return [
+    entry.project,
+    entry.activity_type,
+    entry.leader,
+    entry.location,
+    entry.story_highlight,
+    entry.impact_message,
+    entry.partner_stakeholder,
+    entry.follow_up_needed,
+    entry.notes,
+    entryMetricsText(entry),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function entryStory(entry) {
+  return entry.story_highlight || entry.impact_message || entry.notes || "";
+}
+
+function isInPeriod(dateValue, period) {
+  if (period === "all") return true;
+  if (!dateValue) return false;
+  const entryDate = new Date(`${dateValue}T00:00:00`);
+  const now = new Date();
+
+  if (period === "week") {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+    return entryDate >= weekAgo;
+  }
+
+  if (period === "month") {
+    return (
+      entryDate.getFullYear() === now.getFullYear() &&
+      entryDate.getMonth() === now.getMonth()
+    );
+  }
+
+  if (period === "year") {
+    return entryDate.getFullYear() === now.getFullYear();
+  }
+
+  return true;
+}
+
+function filteredDashboard(data) {
+  const selectedProject = dashboardProjectFilter?.value || "all";
+  const selectedPeriod = periodFilter?.value || "all";
+  const search = (searchFilter?.value || "").trim().toLowerCase();
+  const allEntries = data.all_entries || data.entries || [];
+  const allVolunteers = data.all_volunteers || data.volunteers || [];
+
+  const entries = allEntries.filter((entry) => {
+    const projectMatches = selectedProject === "all" || entry.project === selectedProject;
+    const periodMatches = isInPeriod(entry.entry_date, selectedPeriod);
+    const searchMatches = !search || entrySearchText(entry).includes(search);
+    return projectMatches && periodMatches && searchMatches;
+  });
+
+  const volunteers = allVolunteers.filter((volunteer) => {
+    return selectedProject === "all" || volunteer.project === selectedProject;
+  });
+
+  return buildSummary(entries, volunteers, data.leaders || []);
+}
+
 function escapeText(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -362,7 +367,8 @@ function escapeText(value) {
 }
 
 function renderDashboard(data) {
-  const totals = data.totals;
+  const view = filteredDashboard(data);
+  const totals = view.totals;
   stats.innerHTML = [
     ["Turtles sighted", totals.turtles_sighted, "sea"],
     ["Turtle nests", totals.nests, "forest"],
@@ -383,7 +389,7 @@ function renderDashboard(data) {
     )
     .join("");
 
-  projectCards.innerHTML = data.by_project
+  projectCards.innerHTML = view.by_project
     .map(
       (project) => `
         <article class="project-card">
@@ -393,13 +399,14 @@ function renderDashboard(data) {
             <span class="pill">${number(project.entries)} impact entries</span>
             <span class="pill">${number(project.volunteers)} volunteers</span>
             <span class="pill">${number(project.volunteer_hours)} hours</span>
+            <span class="pill">${number(project.impact_total)} total outputs</span>
           </div>
         </article>
       `
     )
     .join("");
 
-  entryRows.innerHTML = data.entries
+  entryRows.innerHTML = view.entries
     .map(
       (entry) => `
         <tr>
@@ -408,16 +415,17 @@ function renderDashboard(data) {
           <td>${entry.activity_type}</td>
           <td>${keyMetrics(entry)}</td>
           <td>${contentUse(entry)}</td>
+          <td>${escapeText(entryStory(entry)).slice(0, 140)}</td>
         </tr>
       `
     )
     .join("");
 
-  if (!data.entries.length) {
-    entryRows.innerHTML = `<tr><td colspan="5">No impact entries yet.</td></tr>`;
+  if (!view.entries.length) {
+    entryRows.innerHTML = `<tr><td colspan="6">No impact entries match the current filters.</td></tr>`;
   }
 
-  contentQueue.innerHTML = data.content_queue
+  contentQueue.innerHTML = view.content_queue
     .map(
       (item) => `
         <article class="content-card">
@@ -444,7 +452,7 @@ function renderDashboard(data) {
     )
     .join("");
 
-  if (!data.content_queue.length) {
+  if (!view.content_queue.length) {
     contentQueue.innerHTML = `
       <div class="empty-state">
         Save an impact entry and tick Social or Website to build this queue.
@@ -452,7 +460,7 @@ function renderDashboard(data) {
     `;
   }
 
-  leaderList.innerHTML = data.leaders
+  leaderList.innerHTML = (data.leaders || [])
     .map(
       (leader) => `
         <form class="leader" data-project="${leader.project}">
@@ -474,16 +482,19 @@ async function loadDashboard() {
         window.fuzeSupabase.list("project_leaders", "project.asc"),
       ]);
       setSyncStatus("online", "Connected to Supabase. Data shown here is from the online database.");
-      renderDashboard(buildSummary(entries, volunteers, leaders));
+      dashboardData = buildSummary(entries, volunteers, leaders);
+      renderDashboard(dashboardData);
     } else {
       const data = await apiJson("/api/summary");
       setSyncStatus("online", "Connected to the local database server.");
-      renderDashboard(data);
+      dashboardData = data;
+      renderDashboard(dashboardData);
     }
   } catch (error) {
     const detail = window.fuzeSupabaseLastError || error.message || "Supabase is not ready yet.";
     setSyncStatus("local", `Using local browser storage. Online database issue: ${detail}`);
-    renderDashboard(buildLocalSummary());
+    dashboardData = buildLocalSummary();
+    renderDashboard(dashboardData);
   }
 }
 
@@ -636,6 +647,18 @@ projectSelect.addEventListener("change", () => {
   renderMetricFields();
   loadEmailTemplate();
 });
+
+[dashboardProjectFilter, periodFilter].forEach((control) => {
+  control?.addEventListener("change", () => {
+    if (dashboardData) renderDashboard(dashboardData);
+  });
+});
+
+searchFilter?.addEventListener("input", () => {
+  if (dashboardData) renderDashboard(dashboardData);
+});
+
+refreshDashboard?.addEventListener("click", loadDashboard);
 
 impactForm.elements.entry_date.value = today();
 renderMetricFields();
