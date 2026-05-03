@@ -13,13 +13,39 @@
         <h1>Impact Dashboard</h1>
       </div>
       <div class="top-actions">
-        <a class="header-link" href="form.html">Team update form</a>
+        <a class="header-link" href="/form">Team update form</a>
         <div class="tagline">Connecting People with Nature</div>
       </div>
     </header>
 
     <main>
       <div id="syncStatus" class="sync-status">Checking online database...</div>
+
+      <section class="dashboard-tools">
+        <label>
+          Project
+          <select id="dashboardProjectFilter">
+            <option value="all">All projects</option>
+            <option value="PTP">PTP - Turtles</option>
+            <option value="PMRS">PMRS - Marine</option>
+            <option value="PEEP">PEEP - Education</option>
+          </select>
+        </label>
+        <label>
+          Period
+          <select id="periodFilter">
+            <option value="all">All time</option>
+            <option value="year">This year</option>
+            <option value="month">This month</option>
+            <option value="week">Last 7 days</option>
+          </select>
+        </label>
+        <label>
+          Search
+          <input id="searchFilter" placeholder="Story, location, partner, leader..." />
+        </label>
+        <button id="refreshDashboard" class="secondary" type="button">Refresh</button>
+      </section>
 
       <section class="stat-grid" id="stats"></section>
 
@@ -168,6 +194,7 @@
                   <th>Activity</th>
                   <th>Key metrics</th>
                   <th>Content use</th>
+                  <th>Story</th>
                 </tr>
               </thead>
               <tbody id="entryRows"></tbody>
