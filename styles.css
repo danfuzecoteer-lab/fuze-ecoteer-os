@@ -2,14 +2,15 @@
   --ink: #17201c;
   --muted: #62716b;
   --line: #dbe4df;
-  --paper: #fbfcfa;
+  --paper: #f4f8f6;
   --panel: #ffffff;
   --forest: #1f6f55;
   --sea: #17708f;
+  --deep-sea: #073f50;
   --sun: #d99a29;
   --coral: #c85f4a;
   --soft: #edf5f1;
-  --shadow: 0 16px 42px rgba(23, 32, 28, 0.08);
+  --shadow: 0 18px 48px rgba(8, 45, 48, 0.12);
 }
 
 * {
@@ -18,7 +19,9 @@
 
 body {
   margin: 0;
-  background: var(--paper);
+  background:
+    linear-gradient(180deg, #eef7f5 0, var(--paper) 340px),
+    var(--paper);
   color: var(--ink);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -26,7 +29,7 @@ body {
 .topbar {
   align-items: center;
   background:
-    linear-gradient(90deg, rgba(18, 56, 47, 0.96), rgba(23, 99, 123, 0.94)),
+    linear-gradient(90deg, rgba(9, 54, 47, 0.95), rgba(13, 91, 118, 0.9)),
     url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=80");
   background-position: center;
   background-size: cover;
@@ -35,6 +38,23 @@ body {
   justify-content: space-between;
   min-height: 148px;
   padding: 28px clamp(18px, 5vw, 64px);
+}
+
+.brand-block {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+}
+
+.brand-logo {
+  background: white;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 8px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.18);
+  height: clamp(68px, 9vw, 92px);
+  object-fit: contain;
+  padding: 8px;
+  width: clamp(68px, 9vw, 92px);
 }
 
 .eyebrow {
@@ -55,6 +75,7 @@ h1 {
   font-size: clamp(32px, 5vw, 56px);
   line-height: 1;
   margin-bottom: 0;
+  max-width: 720px;
 }
 
 h2 {
@@ -63,6 +84,7 @@ h2 {
 }
 
 .tagline {
+  background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 8px;
   font-weight: 700;
@@ -78,7 +100,7 @@ h2 {
 }
 
 .header-link {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.42);
   border-radius: 8px;
   color: white;
@@ -104,6 +126,11 @@ main {
   grid-template-columns: minmax(160px, 0.8fr) minmax(140px, 0.7fr) minmax(240px, 1.4fr) auto;
   margin-bottom: 18px;
   padding: 16px;
+}
+
+.dashboard-tools label {
+  color: #38544c;
+  font-weight: 700;
 }
 
 .sync-status {
@@ -159,6 +186,7 @@ main {
   min-height: 108px;
   padding: 18px;
   position: relative;
+  overflow: hidden;
 }
 
 .stat::before {
@@ -208,6 +236,23 @@ main {
 
 .panel {
   padding: 20px;
+}
+
+.panel,
+.dashboard-tools,
+.stat,
+.project-card {
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.project-card:hover,
+.stat:hover {
+  border-color: #bfd5cd;
+  box-shadow: 0 22px 54px rgba(8, 45, 48, 0.16);
+  transform: translateY(-2px);
 }
 
 .panel-head {
@@ -334,13 +379,50 @@ button {
 
 .project-card {
   min-height: 132px;
+  overflow: hidden;
   padding: 18px;
+  position: relative;
+}
+
+.project-card::before {
+  content: "";
+  inset: 0 0 auto 0;
+  position: absolute;
+  height: 5px;
+}
+
+.project-card.sea::before {
+  background: linear-gradient(90deg, #0aa8cf, var(--deep-sea));
+}
+
+.project-card.coral::before {
+  background: linear-gradient(90deg, var(--coral), var(--sun));
+}
+
+.project-card.forest::before {
+  background: linear-gradient(90deg, var(--forest), #20a5d8);
+}
+
+.project-card-head {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
+.project-logo {
+  background: #f8fbfa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  height: 74px;
+  object-fit: contain;
+  padding: 8px;
+  width: 74px;
 }
 
 .project-card strong {
   display: block;
   font-size: 19px;
-  margin-bottom: 10px;
+  line-height: 1.18;
 }
 
 .project-card .mini {
@@ -366,7 +448,8 @@ button {
 }
 
 .content-card {
-  background: #f7faf8;
+  background:
+    linear-gradient(180deg, #ffffff, #f7faf8);
   border: 1px solid var(--line);
   border-radius: 8px;
   display: grid;
@@ -425,7 +508,7 @@ td {
 }
 
 th {
-  background: #f7faf8;
+  background: #f1f7f4;
   color: var(--muted);
   font-size: 13px;
   position: sticky;
@@ -490,6 +573,10 @@ th {
     align-items: flex-start;
     flex-direction: column;
     gap: 18px;
+  }
+
+  .brand-block {
+    align-items: flex-start;
   }
 
   .top-actions {
