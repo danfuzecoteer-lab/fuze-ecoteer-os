@@ -1,0 +1,19 @@
+data
+__pycache__
+.tools
+.vercel-cli-env
+.npm-cache
+.npm-prefix
+package
+*.tgz
+package-lock.json
+*.sqlite3
+*.pyc
+app.py
+run_dashboard.bat
+open_dashboard.bat
+Open Dashboard.cmd
+Open Dashboard.url
+serve-dashboard.mjs
+index.html
+supabase_schema.sql

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "public",
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/team-update",
+      "destination": "/form",
+      "permanent": false
+    }
+  ]
+}
