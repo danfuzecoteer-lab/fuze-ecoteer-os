@@ -9,6 +9,7 @@
   --sun: #d99a29;
   --coral: #c85f4a;
   --soft: #edf5f1;
+  --shadow: 0 16px 42px rgba(23, 32, 28, 0.08);
 }
 
 * {
@@ -24,7 +25,11 @@ body {
 
 .topbar {
   align-items: center;
-  background: linear-gradient(90deg, #12382f, #17637b);
+  background:
+    linear-gradient(90deg, rgba(18, 56, 47, 0.96), rgba(23, 99, 123, 0.94)),
+    url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=80");
+  background-position: center;
+  background-size: cover;
   color: white;
   display: flex;
   justify-content: space-between;
@@ -88,6 +93,19 @@ main {
   padding: 24px clamp(14px, 3vw, 36px) 56px;
 }
 
+.dashboard-tools {
+  align-items: end;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(140px, 0.7fr) minmax(240px, 1.4fr) auto;
+  margin-bottom: 18px;
+  padding: 16px;
+}
+
 .sync-status {
   background: #fff7e8;
   border: 1px solid #efd39c;
@@ -134,11 +152,37 @@ main {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
+  box-shadow: var(--shadow);
 }
 
 .stat {
   min-height: 108px;
   padding: 18px;
+  position: relative;
+}
+
+.stat::before {
+  border-radius: 8px 0 0 8px;
+  content: "";
+  inset: 0 auto 0 0;
+  position: absolute;
+  width: 5px;
+}
+
+.stat.sea::before {
+  background: var(--sea);
+}
+
+.stat.forest::before {
+  background: var(--forest);
+}
+
+.stat.sun::before {
+  background: var(--sun);
+}
+
+.stat.coral::before {
+  background: var(--coral);
 }
 
 .stat span,
@@ -152,6 +196,7 @@ main {
 .stat strong {
   display: block;
   font-size: 30px;
+  letter-spacing: 0;
 }
 
 .layout {
@@ -306,6 +351,10 @@ button {
   margin-top: 14px;
 }
 
+.content-card textarea {
+  background: #fff;
+}
+
 .content-panel {
   margin-bottom: 22px;
 }
@@ -376,8 +425,11 @@ td {
 }
 
 th {
+  background: #f7faf8;
   color: var(--muted);
   font-size: 13px;
+  position: sticky;
+  top: 0;
 }
 
 .leader-list {
@@ -415,11 +467,15 @@ th {
   opacity: 1;
 }
 
-  @media (max-width: 980px) {
+@media (max-width: 980px) {
   .layout,
   .stat-grid,
   .project-row,
   .content-queue {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-tools {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -447,6 +503,7 @@ th {
   .stat-grid,
   .project-row,
   .content-queue,
+  .dashboard-tools,
   .form-grid,
   .metric-fields,
   .leader {
