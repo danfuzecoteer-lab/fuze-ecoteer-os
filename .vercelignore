@@ -15,5 +15,4 @@ open_dashboard.bat
 Open Dashboard.cmd
 Open Dashboard.url
 serve-dashboard.mjs
-index.html
 supabase_schema.sql
