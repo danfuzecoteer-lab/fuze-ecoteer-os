@@ -1,11 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
-  "redirects": [
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/form",
+      "destination": "/form.html"
+    },
     {
       "source": "/team-update",
-      "destination": "/form",
-      "permanent": false
+      "destination": "/form.html"
     }
   ]
 }
