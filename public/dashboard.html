@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fuze Ecoteer Impact Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Fuze Ecoteer</p>
+        <h1>Impact Dashboard</h1>
+      </div>
+      <div class="top-actions">
+        <a class="header-link" href="/form">Team update form</a>
+        <div class="tagline">Connecting People with Nature</div>
+      </div>
+    </header>
+
+    <main>
+      <div id="syncStatus" class="sync-status">Checking online database...</div>
+
+      <section class="dashboard-tools">
+        <label>
+          Project
+          <select id="dashboardProjectFilter">
+            <option value="all">All projects</option>
+            <option value="PTP">PTP - Turtles</option>
+            <option value="PMRS">PMRS - Marine</option>
+            <option value="PEEP">PEEP - Education</option>
+          </select>
+        </label>
+        <label>
+          Period
+          <select id="periodFilter">
+            <option value="all">All time</option>
+            <option value="year">This year</option>
+            <option value="month">This month</option>
+            <option value="week">Last 7 days</option>
+          </select>
+        </label>
+        <label>
+          Search
+          <input id="searchFilter" placeholder="Story, location, partner, leader..." />
+        </label>
+        <button id="refreshDashboard" class="secondary" type="button">Refresh</button>
+      </section>
+
+      <section class="stat-grid" id="stats"></section>
+
+      <section class="layout">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Add weekly impact</h2>
+            <select id="projectSelect" aria-label="Project">
+              <option value="PTP">PTP - Turtles</option>
+              <option value="PMRS">PMRS - Marine</option>
+              <option value="PEEP">PEEP - Education</option>
+            </select>
+          </div>
+
+          <form id="impactForm" class="form-grid">
+            <label>
+              Date
+              <input type="date" name="entry_date" required />
+            </label>
+            <label>
+              Leader
+              <input name="leader" placeholder="Project leader" />
+            </label>
+            <label>
+              Location
+              <input name="location" placeholder="Beach, reef, village, school" />
+            </label>
+            <label>
+              Activity
+              <select name="activity_type">
+                <option value="Weekly update">Weekly update</option>
+                <option value="Field survey">Field survey</option>
+                <option value="Beach clean-up">Beach clean-up</option>
+                <option value="Class/session">Class/session</option>
+              </select>
+            </label>
+
+            <div id="metricFields" class="metric-fields"></div>
+
+            <label class="wide">
+              Story highlight
+              <textarea name="story_highlight" rows="3" placeholder="What happened this week that people would care about?"></textarea>
+            </label>
+
+            <label class="wide">
+              Impact message
+              <textarea name="impact_message" rows="3" placeholder="Why does this matter for conservation, education, community, or youth development?"></textarea>
+            </label>
+
+            <label>
+              Photo or video link
+              <input name="photo_video_link" placeholder="Google Drive, Instagram, YouTube, etc." />
+            </label>
+            <label>
+              Partner or stakeholder
+              <input name="partner_stakeholder" placeholder="DOF, school, dive centre, PILA..." />
+            </label>
+            <label>
+              Follow-up needed
+              <input name="follow_up_needed" placeholder="Report, thank-you, issue, repair..." />
+            </label>
+
+            <div class="checks wide">
+              <label>
+                <input type="checkbox" name="best_for_social" />
+                Good for social media
+              </label>
+              <label>
+                <input type="checkbox" name="best_for_website" />
+                Good for website/report
+              </label>
+            </div>
+
+            <label class="wide">
+              Internal notes
+              <textarea name="notes" rows="2" placeholder="Private context, issue, or detail that helps the team"></textarea>
+            </label>
+
+            <button class="primary" type="submit">Save impact entry</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <h2>Add volunteer</h2>
+          <form id="volunteerForm" class="form-grid">
+            <label>
+              Project
+              <select name="project">
+                <option value="PTP">PTP</option>
+                <option value="PMRS">PMRS</option>
+                <option value="PEEP">PEEP</option>
+              </select>
+            </label>
+            <label>
+              Name
+              <input name="volunteer_name" required />
+            </label>
+            <label>
+              Email
+              <input type="email" name="email" />
+            </label>
+            <label>
+              Country
+              <input name="country" />
+            </label>
+            <label>
+              Start
+              <input type="date" name="start_date" />
+            </label>
+            <label>
+              End
+              <input type="date" name="end_date" />
+            </label>
+            <label>
+              Hours
+              <input type="number" name="hours" min="0" step="0.5" />
+            </label>
+            <label class="wide">
+              Notes
+              <textarea name="notes" rows="2"></textarea>
+            </label>
+            <button class="primary" type="submit">Save volunteer</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="project-row" id="projectCards"></section>
+
+      <section class="panel content-panel">
+        <div class="panel-head">
+          <h2>Content queue for social media and website</h2>
+          <button id="copyContent" class="secondary" type="button">Copy selected text</button>
+        </div>
+        <div id="contentQueue" class="content-queue"></div>
+      </section>
+
+      <section class="layout">
+        <div class="panel">
+          <h2>Recent impact entries</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Project</th>
+                  <th>Activity</th>
+                  <th>Key metrics</th>
+                  <th>Content use</th>
+                  <th>Story</th>
+                </tr>
+              </thead>
+              <tbody id="entryRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Weekly reminders</h2>
+            <button id="copyEmail" class="secondary" type="button">Copy email</button>
+          </div>
+          <div id="leaderList" class="leader-list"></div>
+          <label class="wide">
+            Email template
+            <textarea id="emailTemplate" rows="10"></textarea>
+          </label>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" role="status"></div>
+    <script src="config.js"></script>
+    <script src="supabase.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
