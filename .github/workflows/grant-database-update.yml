@@ -3,8 +3,8 @@ name: Grant Database Update
 on:
   workflow_dispatch:
   schedule:
-    # Tuesday 9:00 AM Asia/Kuala_Lumpur
-    - cron: "0 1 * * 2"
+    # Thursday 9:00 AM Asia/Kuala_Lumpur
+    - cron: "0 1 * * 4"
 
 jobs:
   update-grants:
