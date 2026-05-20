@@ -1,0 +1,77 @@
+name: Cloud Automations
+
+on:
+  schedule:
+    # 8:00 AM Asia/Kuala_Lumpur
+    - cron: "0 0 * * *"
+    # 9:00 AM Asia/Kuala_Lumpur
+    - cron: "0 1 * * *"
+    # Sunday 10:00 PM Asia/Kuala_Lumpur
+    - cron: "0 14 * * 0"
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "Automation group to run"
+        required: true
+        default: "daily-8am"
+        type: choice
+        options:
+          - daily-8am
+          - daily-9am
+          - grant-database
+          - sunday-10pm
+      dry_run:
+        description: "List jobs without generating or sending email"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+      GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+      GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+      GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+      GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve automation group
+        id: group
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "group=${{ inputs.group }}" >> "$GITHUB_OUTPUT"
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
+            echo "group=daily-8am" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+            echo "group=daily-9am" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 14 * * 0" ]; then
+            echo "group=sunday-10pm" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unknown schedule: ${{ github.event.schedule }}" >&2
+            exit 1
+          fi
+
+      - name: Run cloud automations
+        shell: bash
+        run: |
+          args=(--group "${{ steps.group.outputs.group }}")
+          if [ "${{ steps.group.outputs.dry_run }}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          node scripts/run-cloud-automations.js "${args[@]}"
