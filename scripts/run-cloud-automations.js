@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+
+const { automationsForGroup, malaysiaDateParts } = require("../api/lib/cloud-automations");
+const { sendEmail } = require("../api/lib/gmail");
+const { generateAutomationEmail } = require("../api/lib/openai");
+const { updateGrantDatabase } = require("../api/lib/grant-database");
+
+function parseArgs(argv) {
+  const args = { group: "", dryRun: false };
+  for (let index = 2; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (value === "--dry-run") {
+      args.dryRun = true;
+    } else if (value === "--group") {
+      args.group = argv[index + 1] || "";
+      index += 1;
+    }
+  }
+  return args;
+}
+
+async function main() {
+  const { group, dryRun } = parseArgs(process.argv);
+  if (!group) {
+    throw new Error("Missing required --group value");
+  }
+
+  const { isoDate } = malaysiaDateParts();
+  const automations = automationsForGroup(group);
+  if (!automations.length) {
+    throw new Error(`No automations found for group: ${group}`);
+  }
+
+  console.log(`Running group ${group} for ${isoDate} (${automations.length} automation/s)`);
+
+  for (const automation of automations) {
+    const subject = `${automation.subjectPrefix} | ${isoDate}`;
+    if (automation.id === "grant-database-list") {
+      if (dryRun) {
+        console.log(`[dry-run] ${automation.id} -> would upsert grant_opportunities in Supabase`);
+        continue;
+      }
+      console.log("Updating online grant database");
+      const result = await updateGrantDatabase({ runDate: isoDate, limit: 100 });
+      console.log(`Upserted ${result.saved.length} grant rows into Supabase`);
+      continue;
+    }
+
+    if (dryRun) {
+      console.log(`[dry-run] ${automation.id} -> ${automation.to.join(", ")} :: ${subject}`);
+      continue;
+    }
+
+    console.log(`Generating ${automation.id}`);
+    const body = await generateAutomationEmail(automation, isoDate);
+    const sent = await sendEmail({ to: automation.to, subject, body });
+    console.log(`Sent ${automation.id}: ${sent.id || "ok"}`);
+  }
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
