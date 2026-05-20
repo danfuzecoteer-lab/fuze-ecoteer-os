@@ -90,12 +90,13 @@ const AUTOMATIONS = [
   {
     id: "grant-database-list",
     name: "Grant Database List",
-    group: "tuesday-9am",
+    group: "grant-database",
     to: DAN_RECIPIENT,
     subjectPrefix: "Grant Database",
     prompt: [
       "Create a weekly grant prospecting list for Fuze Ecoteer.",
       "Target PTP, PMRS, PEEP, Upcycled, and Business Development.",
+      "Include CSR partnership and sponsorship opportunities from Malaysian and Singaporean companies.",
       "Return a table with organisation, grant name, link/search phrase, deadline, description, suitable project, email, and contact details.",
     ].join("\n"),
   },
