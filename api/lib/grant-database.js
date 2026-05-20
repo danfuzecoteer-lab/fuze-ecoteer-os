@@ -80,6 +80,8 @@ async function generateGrantRows(runDate, limit = 100) {
             `Run date: ${runDate}.`,
             `Find up to ${limit} grant opportunities Fuze Ecoteer could apply for.`,
             "Target projects: PTP, PMRS, PEEP, Upcycled, Business Development.",
+            "Also look for CSR partnership and sponsorship opportunities from Malaysian and Singaporean companies, especially companies with ESG, sustainability, ocean, education, tourism, community, biodiversity, waste, or youth programmes.",
+            "Include both formal grant programmes and relevant CSR/company foundation opportunities where Fuze Ecoteer could approach the company.",
             "Return a JSON array. Each item must use these keys:",
             "organisation_name, grant_name, grant_url, deadline, description, suitable_project, email, contact_details, country, funding_amount, eligibility_notes, source, confidence.",
             "Use ISO date YYYY-MM-DD for deadline where known; otherwise null.",
