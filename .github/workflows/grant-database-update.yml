@@ -1,0 +1,26 @@
+name: Grant Database Update
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Tuesday 9:00 AM Asia/Kuala_Lumpur
+    - cron: "0 1 * * 2"
+
+jobs:
+  update-grants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Update grant database
+        run: node scripts/run-cloud-automations.js --group grant-database
