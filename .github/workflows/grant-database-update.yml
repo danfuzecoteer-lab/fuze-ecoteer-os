@@ -3,8 +3,10 @@ name: Grant Database Update
 on:
   workflow_dispatch:
   schedule:
-    # Thursday 9:00 AM Asia/Kuala_Lumpur
-    - cron: "0 1 * * 4"
+    # Thursday 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
+    - cron: "7 1 * * 4"
+    # Thursday 9:37 AM Asia/Kuala_Lumpur fallback, so a missed first scheduled event does not skip the weekly update.
+    - cron: "37 1 * * 4"
 
 jobs:
   update-grants:
