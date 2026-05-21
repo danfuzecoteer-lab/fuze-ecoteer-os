@@ -2,12 +2,12 @@ name: Cloud Automations
 
 on:
   schedule:
-    # 8:00 AM Asia/Kuala_Lumpur
-    - cron: "0 0 * * *"
-    # 9:00 AM Asia/Kuala_Lumpur
-    - cron: "0 1 * * *"
-    # Sunday 10:00 PM Asia/Kuala_Lumpur
-    - cron: "0 14 * * 0"
+    # 8:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
+    - cron: "7 0 * * *"
+    # 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
+    - cron: "7 1 * * *"
+    # Sunday 10:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
+    - cron: "7 14 * * 0"
   workflow_dispatch:
     inputs:
       group:
@@ -53,13 +53,13 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "group=${{ inputs.group }}" >> "$GITHUB_OUTPUT"
             echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "7 0 * * *" ]; then
             echo "group=daily-8am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "7 1 * * *" ]; then
             echo "group=daily-9am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "0 14 * * 0" ]; then
+          elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
             echo "group=sunday-10pm" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           else
