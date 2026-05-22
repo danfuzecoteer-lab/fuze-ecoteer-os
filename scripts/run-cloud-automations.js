@@ -94,6 +94,9 @@ async function main() {
         console.log(`Upserted ${result.saved.length} marketing research rows into Supabase`);
         statusLines.push("Database updated: marketing_research_rows");
         statusLines.push(`Rows upserted: ${result.saved.length}`);
+        if (result.warning) {
+          statusLines.push(`Warning: ${result.warning}`);
+        }
       }
 
       if (automation.id === "cold-email-crm") {
