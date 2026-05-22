@@ -70,14 +70,18 @@ async function main() {
         const grantLimit = Number(process.env.GRANT_RESEARCH_LIMIT || 70);
         const result = await updateGrantDatabase({ runDate: isoDate, limit: grantLimit });
         console.log(`Upserted ${result.saved.length} grant rows into Supabase`);
+        const lines = [
+          `Database updated: grant_opportunities`,
+          `Rows upserted: ${result.saved.length}`,
+        ];
+        if (result.warning) {
+          lines.push(`Warning: ${result.warning}`);
+        }
         const status = await sendStatusEmail({
           automation,
           isoDate,
           status: "Completed",
-          lines: [
-            `Database updated: grant_opportunities`,
-            `Rows upserted: ${result.saved.length}`,
-          ],
+          lines,
         });
         console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
         continue;
