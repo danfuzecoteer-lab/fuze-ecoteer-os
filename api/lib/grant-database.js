@@ -45,6 +45,22 @@ function readAutomationBrief(name) {
   }
 }
 
+function compactBriefForPrompt(brief) {
+  if (!brief) return "";
+  const usefulLines = brief
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      return (
+        line.startsWith("#") ||
+        line.startsWith("- ") ||
+        /^(Track|Suitable project examples|Search|Capture|Score|Use|Prioritise|Separate|Target|Focus|For each|Every week|Produce|Flag)\b/.test(line)
+      );
+    });
+  return usefulLines.join("\n").slice(0, 12000);
+}
+
 function normalizeGrant(row) {
   return {
     grant_name: cleanText(row.grant_name || row.name_of_grant || row.grant || row.name),
@@ -72,7 +88,7 @@ function validGrant(row) {
 
 async function generateGrantRows(runDate, limit = 100) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
-  const brief = readAutomationBrief("grant-deep-research");
+  const brief = compactBriefForPrompt(readAutomationBrief("grant-deep-research"));
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
