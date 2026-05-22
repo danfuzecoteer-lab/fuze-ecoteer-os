@@ -67,7 +67,8 @@ async function main() {
           continue;
         }
         console.log(`Updating online grant database`);
-        const result = await updateGrantDatabase({ runDate: isoDate, limit: 100 });
+        const grantLimit = Number(process.env.GRANT_RESEARCH_LIMIT || 70);
+        const result = await updateGrantDatabase({ runDate: isoDate, limit: grantLimit });
         console.log(`Upserted ${result.saved.length} grant rows into Supabase`);
         const status = await sendStatusEmail({
           automation,
@@ -101,7 +102,7 @@ async function main() {
 
       if (automation.id === "cold-email-crm") {
         console.log("Updating online cold-email CRM database");
-        const result = await updateColdEmailCrmDatabase({ runDate: isoDate, limit: 50 });
+        const result = await updateColdEmailCrmDatabase({ runDate: isoDate, limit: 100 });
         console.log(`Upserted ${result.saved.length} cold-email CRM rows into Supabase`);
         statusLines.push("Database updated: marketing_cold_email_leads");
         statusLines.push(`Rows upserted: ${result.saved.length}`);
