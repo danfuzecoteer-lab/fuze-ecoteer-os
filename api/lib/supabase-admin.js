@@ -34,6 +34,28 @@ async function upsertRows(table, rows, onConflict) {
   return response.json();
 }
 
+async function insertRows(table, rows) {
+  if (!rows.length) return [];
+  const { url, serviceRoleKey } = supabaseConfig();
+  const response = await fetch(`${url}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(rows),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase insert failed: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
 module.exports = {
+  insertRows,
   upsertRows,
 };
