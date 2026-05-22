@@ -21,9 +21,9 @@ on:
           - grant-database
           - sunday-10pm
       dry_run:
-        description: "List jobs without generating or sending email"
+        description: "Dry run only: true means do not generate/send email"
         required: true
-        default: true
+        default: false
         type: boolean
 
 jobs:
