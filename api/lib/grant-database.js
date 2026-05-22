@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { upsertRows } = require("./supabase-admin");
 
 function requireEnv(name) {
@@ -34,6 +36,15 @@ function cleanConfidence(value) {
   return Math.max(0, Math.min(1, number));
 }
 
+function readAutomationBrief(name) {
+  const briefPath = path.join(process.cwd(), "automation-briefs", `${name}.md`);
+  try {
+    return fs.readFileSync(briefPath, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 function normalizeGrant(row) {
   return {
     grant_name: cleanText(row.grant_name || row.name_of_grant || row.grant || row.name),
@@ -61,6 +72,7 @@ function validGrant(row) {
 
 async function generateGrantRows(runDate, limit = 100) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
+  const brief = readAutomationBrief("grant-deep-research");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -78,10 +90,13 @@ async function generateGrantRows(runDate, limit = 100) {
           role: "user",
           content: [
             `Run date: ${runDate}.`,
+            brief ? `Use this automation brief as the research and scoring standard:\n\n${brief}` : "",
             `Find up to ${limit} grant opportunities Fuze Ecoteer could apply for.`,
             "Target projects: PTP, PMRS, PEEP, Upcycled, Business Development.",
             "Also look for CSR partnership and sponsorship opportunities from Malaysian and Singaporean companies, especially companies with ESG, sustainability, ocean, education, tourism, community, biodiversity, waste, or youth programmes.",
             "Include both formal grant programmes and relevant CSR/company foundation opportunities where Fuze Ecoteer could approach the company.",
+            "Prioritise open, opening-soon, annual-tracking and rolling opportunities. Include closed opportunities only when they are strategically worth tracking annually.",
+            "Use the brief's scoring logic internally. Put opportunity score, chance rating, effort rating, recommended action, deadline status, best project match, readiness notes and key evidence into description, suitable_project, eligibility_notes, source and confidence as appropriate.",
             "Return a JSON array. Each item must use these keys:",
             "organisation_name, grant_name, grant_url, deadline, description, suitable_project, email, contact_details, country, funding_amount, eligibility_notes, source, confidence.",
             "Use ISO date YYYY-MM-DD for deadline where known; otherwise null.",
