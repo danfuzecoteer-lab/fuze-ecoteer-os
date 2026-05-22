@@ -6,8 +6,17 @@ function requireEnv(name) {
   return value;
 }
 
-async function generateAutomationEmail(automation, runDate) {
+async function generateAutomationEmail(automation, runDate, noteContext = "") {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
+  const userContent = [
+    automation.prompt,
+    noteContext,
+    `Run date in Kuala Lumpur: ${runDate}`,
+    "Return only the email body.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -23,7 +32,7 @@ async function generateAutomationEmail(automation, runDate) {
         },
         {
           role: "user",
-          content: `${automation.prompt}\n\nRun date in Kuala Lumpur: ${runDate}\n\nReturn only the email body.`,
+          content: userContent,
         },
       ],
     }),
