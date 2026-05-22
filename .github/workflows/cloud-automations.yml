@@ -18,7 +18,9 @@ on:
         options:
           - daily-8am
           - daily-9am
+          - competition-analysis
           - grant-database
+          - marketing-crm
           - sunday-10pm
       dry_run:
         description: "Dry run only: true means do not generate/send email"
