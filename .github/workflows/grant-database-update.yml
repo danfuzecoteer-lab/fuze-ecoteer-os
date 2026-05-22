@@ -8,6 +8,7 @@ on:
     paths:
       - "automation-briefs/grant-deep-research.md"
       - "api/lib/grant-database.js"
+      - "scripts/run-cloud-automations.js"
       - ".github/workflows/grant-database-update.yml"
   schedule:
     # Thursday 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
