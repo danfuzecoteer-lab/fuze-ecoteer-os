@@ -4,6 +4,7 @@ const { automationsForGroup, malaysiaDateParts } = require("../api/lib/cloud-aut
 const { buildAutomationNoteContext, sendEmail } = require("../api/lib/gmail");
 const { generateAutomationEmail } = require("../api/lib/openai");
 const { updateGrantDatabase } = require("../api/lib/grant-database");
+const { updateColdEmailCrmDatabase, updateMarketingResearchDatabase } = require("../api/lib/marketing-database");
 
 function parseArgs(argv) {
   const args = { group: "", dryRun: false };
@@ -40,7 +41,7 @@ async function main() {
         console.log(`[dry-run] ${automation.id} -> would upsert grant_opportunities in Supabase`);
         continue;
       }
-      console.log("Updating online grant database");
+      console.log(`Updating online grant database`);
       const result = await updateGrantDatabase({ runDate: isoDate, limit: 100 });
       console.log(`Upserted ${result.saved.length} grant rows into Supabase`);
       continue;
@@ -49,6 +50,18 @@ async function main() {
     if (dryRun) {
       console.log(`[dry-run] ${automation.id} -> ${automation.to.join(", ")} :: ${subject}`);
       continue;
+    }
+
+    if (automation.id === "competition-analaysis") {
+      console.log("Updating online marketing research database");
+      const result = await updateMarketingResearchDatabase({ runDate: isoDate, limit: 40 });
+      console.log(`Upserted ${result.saved.length} marketing research rows into Supabase`);
+    }
+
+    if (automation.id === "cold-email-crm") {
+      console.log("Updating online cold-email CRM database");
+      const result = await updateColdEmailCrmDatabase({ runDate: isoDate, limit: 50 });
+      console.log(`Upserted ${result.saved.length} cold-email CRM rows into Supabase`);
     }
 
     console.log(`Generating ${automation.id}`);
