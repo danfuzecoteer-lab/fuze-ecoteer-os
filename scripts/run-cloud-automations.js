@@ -26,6 +26,12 @@ function isDatabaseAutomation(id) {
 
 async function sendStatusEmail({ automation, isoDate, status, lines }) {
   if (!isDatabaseAutomation(automation.id)) return null;
+  const gmailEnvNames = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN", "GMAIL_FROM"];
+  const missingGmailEnv = gmailEnvNames.filter((name) => !process.env[name]);
+  if (missingGmailEnv.length) {
+    console.warn(`Skipping ${automation.id} status email; missing ${missingGmailEnv.join(", ")}`);
+    return null;
+  }
 
   const body = [
     `Automation: ${automation.name}`,
