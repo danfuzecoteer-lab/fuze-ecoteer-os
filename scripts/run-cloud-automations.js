@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const { automationsForGroup, malaysiaDateParts } = require("../api/lib/cloud-automations");
-const { sendEmail } = require("../api/lib/gmail");
+const { buildAutomationNoteContext, sendEmail } = require("../api/lib/gmail");
 const { generateAutomationEmail } = require("../api/lib/openai");
 const { updateGrantDatabase } = require("../api/lib/grant-database");
 
@@ -52,7 +52,17 @@ async function main() {
     }
 
     console.log(`Generating ${automation.id}`);
-    const body = await generateAutomationEmail(automation, isoDate);
+    let noteContext = "";
+    try {
+      noteContext = await buildAutomationNoteContext(automation);
+      if (noteContext) {
+        console.log(`Included Gmail reply notes for ${automation.id}`);
+      }
+    } catch (error) {
+      console.warn(`Could not load Gmail reply notes for ${automation.id}: ${error.message}`);
+    }
+
+    const body = await generateAutomationEmail(automation, isoDate, noteContext);
     const sent = await sendEmail({ to: automation.to, subject, body });
     console.log(`Sent ${automation.id}: ${sent.id || "ok"}`);
   }
