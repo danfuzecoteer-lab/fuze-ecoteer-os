@@ -88,6 +88,19 @@ const AUTOMATIONS = [
     ].join("\n"),
   },
   {
+    id: "cold-email-crm",
+    name: "Cold Email CRM",
+    group: "marketing-crm",
+    to: DAN_RECIPIENT,
+    subjectPrefix: "Cold Email CRM",
+    prompt: [
+      "Summarise the weekly cold-email CRM database update for Fuze Ecoteer.",
+      "Focus on schools, day cares / tadika / taska, and corporate HR/CSR leads.",
+      "Explain which lead segments look strongest, what must be verified before outreach, and what the email-writing bot should do next.",
+      "Do not send outreach emails. This is a research and CRM update only.",
+    ].join("\n"),
+  },
+  {
     id: "grant-database-list",
     name: "Grant Database List",
     group: "grant-database",
@@ -132,6 +145,12 @@ function malaysiaDateParts(date = new Date()) {
 function automationsForGroup(group, date = new Date()) {
   if (group === "grant-database") {
     return AUTOMATIONS.filter((automation) => automation.id === "grant-database-list");
+  }
+  if (group === "marketing-crm") {
+    return AUTOMATIONS.filter((automation) => automation.id === "cold-email-crm");
+  }
+  if (group === "competition-analysis") {
+    return AUTOMATIONS.filter((automation) => automation.id === "competition-analaysis");
   }
 
   const { weekday } = malaysiaDateParts(date);
