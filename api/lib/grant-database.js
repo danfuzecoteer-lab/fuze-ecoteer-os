@@ -89,8 +89,11 @@ function validGrant(row) {
 async function generateGrantRows(runDate, limit = 100) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
   const brief = compactBriefForPrompt(readAutomationBrief("grant-deep-research"));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 150000);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
+    signal: controller.signal,
     headers: {
       Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
       "Content-Type": "application/json",
@@ -121,8 +124,9 @@ async function generateGrantRows(runDate, limit = 100) {
           ].join("\n"),
         },
       ],
+      max_output_tokens: 9000,
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     throw new Error(`OpenAI grant research failed: ${await response.text()}`);
@@ -144,13 +148,101 @@ async function generateGrantRows(runDate, limit = 100) {
   return rows.map(normalizeGrant).filter(validGrant);
 }
 
+function fallbackGrantRows() {
+  return [
+    {
+      organisation_name: "Rufford Foundation",
+      grant_name: "Rufford Small Grants",
+      grant_url: "https://www.rufford.org/grants/",
+      deadline: null,
+      description: "Small grants for nature conservation projects. Track for PTP, PMRS and PEEP conservation work.",
+      suitable_project: "PTP, PMRS, PEEP",
+      email: null,
+      contact_details: "Use official application portal",
+      country: "International",
+      funding_amount: "Research current round",
+      eligibility_notes: "Check eligibility, conservation evidence, project lead readiness and current application round.",
+      source: "https://www.rufford.org/grants/",
+      confidence: 0.7,
+    },
+    {
+      organisation_name: "National Geographic Society",
+      grant_name: "Level I and Level II Grants",
+      grant_url: "https://www.nationalgeographic.org/society/grants-and-investments/",
+      deadline: null,
+      description: "Conservation, education, storytelling and science funding. Track for marine and community impact evidence.",
+      suitable_project: "PTP, PMRS, PEEP",
+      email: null,
+      contact_details: "Use official application portal",
+      country: "International",
+      funding_amount: "Research current round",
+      eligibility_notes: "Best fit if FE has strong evidence, local partners, story, science or education angle.",
+      source: "https://www.nationalgeographic.org/society/grants-and-investments/",
+      confidence: 0.65,
+    },
+    {
+      organisation_name: "Biji-Biji Initiative",
+      grant_name: "CSR / ESG partnership benchmark",
+      grant_url: "https://www.biji-biji.com/",
+      deadline: null,
+      description: "CSR and sustainability activity benchmark in Malaysia. Track for corporate partnership positioning.",
+      suitable_project: "Business Development, Upcycled, PEEP",
+      email: null,
+      contact_details: "Research current public partnership route",
+      country: "Malaysia",
+      funding_amount: "CSR partnership potential",
+      eligibility_notes: "Useful as a CSR benchmark and possible partnership/comparison lead, not necessarily a grant.",
+      source: "https://www.biji-biji.com/",
+      confidence: 0.55,
+    },
+    {
+      organisation_name: "UNDP GEF Small Grants Programme",
+      grant_name: "GEF Small Grants Programme",
+      grant_url: "https://sgp.undp.org/",
+      deadline: null,
+      description: "Small grants for civil society and community environmental projects. Track Malaysia availability and cycles.",
+      suitable_project: "PTP, PMRS, PEEP, Upcycled",
+      email: null,
+      contact_details: "Check country programme contacts",
+      country: "Malaysia / International",
+      funding_amount: "Research current country call",
+      eligibility_notes: "Potential fit for biodiversity, waste, community and conservation outcomes if country call is open.",
+      source: "https://sgp.undp.org/",
+      confidence: 0.65,
+    },
+    {
+      organisation_name: "Critical Ecosystem Partnership Fund",
+      grant_name: "CEPF Grants",
+      grant_url: "https://www.cepf.net/grants",
+      deadline: null,
+      description: "Biodiversity hotspot funding. Track if Malaysia/Southeast Asia calls align with FE conservation work.",
+      suitable_project: "PTP, PMRS, PEEP",
+      email: null,
+      contact_details: "Use official grant portal",
+      country: "International",
+      funding_amount: "Research current call",
+      eligibility_notes: "Good fit only when Malaysia or relevant biodiversity hotspot call is open.",
+      source: "https://www.cepf.net/grants",
+      confidence: 0.6,
+    },
+  ].map(normalizeGrant).filter(validGrant);
+}
+
 async function updateGrantDatabase({ runDate, limit = 100, dryRun = false } = {}) {
-  const rows = await generateGrantRows(runDate, limit);
+  let warning = "";
+  let rows;
+  try {
+    rows = await generateGrantRows(runDate, Math.min(limit, 60));
+  } catch (error) {
+    warning = `OpenAI grant research failed (${error.message}); saved fallback grant tracker rows instead.`;
+    console.warn(warning);
+    rows = fallbackGrantRows();
+  }
   if (dryRun) {
-    return { rows, saved: [] };
+    return { rows, saved: [], warning };
   }
   const saved = await upsertRows("grant_opportunities", rows, "organisation_name,grant_name");
-  return { rows, saved };
+  return { rows, saved, warning };
 }
 
 module.exports = {
