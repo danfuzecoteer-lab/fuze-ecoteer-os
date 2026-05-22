@@ -1,6 +1,15 @@
 name: Cloud Automations
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "automation-briefs/competitor-analysis.md"
+      - "api/lib/marketing-database.js"
+      - "api/lib/supabase-admin.js"
+      - "supabase_marketing_schema.sql"
+      - ".github/workflows/cloud-automations.yml"
   schedule:
     # 8:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
     - cron: "7 0 * * *"
@@ -55,6 +64,9 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "group=${{ inputs.group }}" >> "$GITHUB_OUTPUT"
             echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "7 0 * * *" ]; then
             echo "group=daily-8am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
