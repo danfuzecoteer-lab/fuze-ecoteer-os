@@ -86,11 +86,11 @@ function validGrant(row) {
   return row.grant_name && row.organisation_name;
 }
 
-async function generateGrantRows(runDate, limit = 100) {
+async function generateGrantRowsBatch({ runDate, limit, focus }) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
   const brief = compactBriefForPrompt(readAutomationBrief("grant-deep-research"));
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 150000);
+  const timeout = setTimeout(() => controller.abort(), 120000);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     signal: controller.signal,
@@ -110,6 +110,7 @@ async function generateGrantRows(runDate, limit = 100) {
           content: [
             `Run date: ${runDate}.`,
             brief ? `Use this automation brief as the research and scoring standard:\n\n${brief}` : "",
+            `Batch focus: ${focus}.`,
             `Find up to ${limit} grant opportunities Fuze Ecoteer could apply for.`,
             "Target projects: PTP, PMRS, PEEP, Upcycled, Business Development.",
             "Also look for CSR partnership and sponsorship opportunities from Malaysian and Singaporean companies, especially companies with ESG, sustainability, ocean, education, tourism, community, biodiversity, waste, or youth programmes.",
@@ -124,7 +125,7 @@ async function generateGrantRows(runDate, limit = 100) {
           ].join("\n"),
         },
       ],
-      max_output_tokens: 9000,
+      max_output_tokens: 6000,
     }),
   }).finally(() => clearTimeout(timeout));
 
@@ -146,6 +147,62 @@ async function generateGrantRows(runDate, limit = 100) {
   }
 
   return rows.map(normalizeGrant).filter(validGrant);
+}
+
+async function generateGrantRows(runDate, limit = 70) {
+  const target = Math.max(1, Number(limit) || 70);
+  const batches = [
+    {
+      focus: "Malaysia and Singapore corporate CSR, corporate foundations, sponsorships, ESG funds and employee volunteering funds",
+      limit: 12,
+    },
+    {
+      focus: "Malaysian government, GLC, state, ministry, tourism, education, youth, green technology, social enterprise and community funding",
+      limit: 10,
+    },
+    {
+      focus: "Singapore government, Singapore-linked, ASEAN-facing, sustainability, circular economy, youth, education and regional collaboration funds",
+      limit: 10,
+    },
+    {
+      focus: "International marine conservation, sea turtle, biodiversity, climate, blue economy, circular economy and plastic waste grants",
+      limit: 12,
+    },
+    {
+      focus: "Embassy, high commission, foundation, university-linked, family foundation and regional small-grant opportunities",
+      limit: 8,
+    },
+    {
+      focus: "Upcoming, rolling, invite-only, relationship-based, closed-but-annual and worth-tracking opportunities",
+      limit: 8,
+    },
+  ];
+
+  const rows = [];
+  const warnings = [];
+  for (const batch of batches) {
+    if (rows.length >= target) break;
+    try {
+      const batchRows = await generateGrantRowsBatch({
+        runDate,
+        limit: Math.min(batch.limit, target - rows.length),
+        focus: batch.focus,
+      });
+      rows.push(...batchRows);
+    } catch (error) {
+      warnings.push(`${batch.focus}: ${error.message}`);
+    }
+  }
+
+  const seen = new Set();
+  const uniqueRows = rows.filter((row) => {
+    const key = `${row.organisation_name.toLowerCase()}::${row.grant_name.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { rows: uniqueRows, warning: warnings.length ? `Some grant batches failed: ${warnings.join(" | ")}` : "" };
 }
 
 function fallbackGrantRows() {
@@ -232,7 +289,12 @@ async function updateGrantDatabase({ runDate, limit = 100, dryRun = false } = {}
   let warning = "";
   let rows;
   try {
-    rows = await generateGrantRows(runDate, Math.min(limit, 60));
+    const result = await generateGrantRows(runDate, Math.min(limit, 60));
+    rows = result.rows;
+    warning = result.warning;
+    if (!rows.length) {
+      throw new Error("No grant rows returned from batched research");
+    }
   } catch (error) {
     warning = `OpenAI grant research failed (${error.message}); saved fallback grant tracker rows instead.`;
     console.warn(warning);
