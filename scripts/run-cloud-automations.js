@@ -47,9 +47,10 @@ async function sendStatusEmail({ automation, isoDate, status, lines }) {
 function crmRetryLimits() {
   const configured = Number(process.env.CRM_RESEARCH_LIMIT || 0);
   if (Number.isFinite(configured) && configured > 0) {
-    return [Math.round(configured)];
+    const rounded = Math.round(configured);
+    return [...new Set([rounded, Math.min(rounded, 5), 2])];
   }
-  return [100, 35, 15];
+  return [100, 35, 15, 5, 2];
 }
 
 async function updateColdEmailCrmWithRetry({ runDate }) {
