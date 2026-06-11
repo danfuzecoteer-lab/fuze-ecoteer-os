@@ -54,6 +54,7 @@ The Daily Eco email adds internal FE context from Supabase before generation:
 - recent `impact_entries` as Project updates
 - current `volunteers` as Volunteers at site
 - volunteers starting in the next 14 days as Volunteers coming up
+- school/corporate groups currently with FE or arriving in the next 7 days
 - volunteer birth dates as Birthdays today only
 - anonymized `volunteer_feedback` summaries, rating themes, and low-rating watch points
 - recent vendor/supplier `organisations` as New vendors
