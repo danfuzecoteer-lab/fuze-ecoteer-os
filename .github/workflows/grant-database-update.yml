@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - "automation-briefs/grant-deep-research.md"
-      - ".github/workflows/grant-database-update.yml"
   schedule:
     # Thursday 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
     - cron: "7 1 * * 4"
