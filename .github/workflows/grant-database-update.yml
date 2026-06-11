@@ -7,8 +7,6 @@ on:
       - main
     paths:
       - "automation-briefs/grant-deep-research.md"
-      - "api/lib/grant-database.js"
-      - "scripts/run-cloud-automations.js"
       - ".github/workflows/grant-database-update.yml"
   schedule:
     # Thursday 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
@@ -21,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
       GRANT_RESEARCH_LIMIT: "70"
@@ -38,4 +37,9 @@ jobs:
           node-version: "24"
 
       - name: Update grant database
-        run: node scripts/run-cloud-automations.js --group grant-database
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            node scripts/run-cloud-automations.js --group grant-database --dry-run
+          else
+            node scripts/run-cloud-automations.js --group grant-database
+          fi
