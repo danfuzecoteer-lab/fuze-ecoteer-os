@@ -11,11 +11,11 @@ on:
       - "supabase_marketing_schema.sql"
       - ".github/workflows/cloud-automations.yml"
   schedule:
-    # 8:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
+    # 7:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
     - cron: "7 0 * * *"
-    # 9:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
+    # 8:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
     - cron: "7 1 * * *"
-    # Sunday 10:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
+    # Sunday 6:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
     - cron: "7 14 * * 0"
   workflow_dispatch:
     inputs:
