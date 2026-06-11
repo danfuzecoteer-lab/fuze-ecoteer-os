@@ -55,9 +55,10 @@ The Daily Eco email adds internal FE context from Supabase before generation:
 - current `volunteers` as Volunteers at site
 - volunteers starting in the next 14 days as Volunteers coming up
 - volunteer birth dates as Birthdays today only
+- anonymized `volunteer_feedback` summaries, rating themes, and low-rating watch points
 - recent vendor/supplier `organisations` as New vendors
 
-The context intentionally excludes contact, passport, emergency, medical, diet, exact birth year, age, payment, and balance details.
+The context intentionally excludes contact, passport, emergency, medical, diet, exact birth year, age, payment, balance details, and verbatim feedback that could identify someone.
 
 ## Notes
 
