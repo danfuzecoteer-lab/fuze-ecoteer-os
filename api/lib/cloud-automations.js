@@ -22,7 +22,7 @@ const AUTOMATIONS = [
     prompt: [
       "Write today's Fuze Ecoteer daily eco email.",
       "Use this structure: a date-specific eco or conservation hook first, current environmental news second, and Fuze Ecoteer updates third.",
-      "For the Fuze Ecoteer updates section, use internal Project updates, Volunteers at site, and Volunteers coming up when those sections are provided.",
+      "For the Fuze Ecoteer updates section, use internal Project updates, Volunteers at site, Volunteers coming up, and New vendors when those sections are provided.",
       "Do not include private volunteer contact, passport, emergency, medical, diet, payment, or balance details.",
       "Keep the hook fun and light. Mention if a fact needs verification.",
       "Use the FE app/public Fuze Ecoteer context where available, but do not invent internal updates.",
