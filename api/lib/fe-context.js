@@ -125,6 +125,60 @@ function formatBirthday(rowInfo) {
   return `- ${name}${project ? ` (${project})` : ""}: birthday ${timing}`;
 }
 
+function detectGroupType(row) {
+  const haystack = [row.agent, row.notes, row.volunteer_name, row.project].map(text).join(" ");
+  if (/\b(school|college|university|student|students|tadika|taska|teacher|teachers|class|camp)\b/i.test(haystack)) return "school";
+  if (/\b(corporate|company|csr|esg|team building|teambuilding|staff|employee|employees|hr)\b/i.test(haystack)) return "corporate";
+  return "";
+}
+
+function groupName(row) {
+  const agent = text(row.agent);
+  if (agent && !/^(direct|wetravel|we travel|volunteer world|malaysian wildlife|mw|gvi|the great project)$/i.test(agent)) {
+    return agent;
+  }
+  const notes = text(row.notes);
+  const namedMatch = notes.match(/\b(?:school|university|college|company|corporate|csr|group)\b[: -]+([^.;,]+)/i);
+  if (namedMatch) return text(namedMatch[1]);
+  return detectGroupType(row) === "school" ? "School group" : "Corporate group";
+}
+
+function schoolCorporateGroups(rows, runDate, daysAhead) {
+  const windowEnd = addDays(runDate, daysAhead);
+  const groups = new Map();
+  for (const row of rows) {
+    const type = detectGroupType(row);
+    if (!type) continue;
+    const startDate = row.start_date || runDate;
+    const endDate = row.end_date || startDate;
+    const overlapsNow = startDate <= runDate && endDate >= runDate;
+    const arrivesSoon = startDate > runDate && startDate <= windowEnd;
+    if (!overlapsNow && !arrivesSoon) continue;
+
+    const key = [type, groupName(row), row.project || "Unknown", startDate, endDate].join("|");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        type,
+        name: groupName(row),
+        project: row.project || "Unknown",
+        startDate,
+        endDate,
+        status: overlapsNow ? "with us now" : "arriving soon",
+        count: 0,
+      });
+    }
+    groups.get(key).count += 1;
+  }
+
+  return [...groups.values()].sort((a, b) => a.startDate.localeCompare(b.startDate) || a.name.localeCompare(b.name));
+}
+
+function formatSchoolCorporateGroup(group) {
+  const typeLabel = group.type === "school" ? "School" : "Corporate";
+  const range = group.startDate === group.endDate ? group.startDate : `${group.startDate} to ${group.endDate}`;
+  return `- ${typeLabel}: ${group.name} | ${group.project} | ${range} | ${group.status} | ${group.count} participant${group.count === 1 ? "" : "s"}`;
+}
+
 function numberAverage(values) {
   const numbers = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
   if (!numbers.length) return null;
@@ -220,8 +274,9 @@ function formatFeedbackSummary(rows) {
 async function buildDailyEcoFeContext(runDate) {
   const twoWeeksAgo = addDays(runDate, -14);
   const thirtyDaysAgo = addDays(runDate, -30);
+  const oneWeekAhead = addDays(runDate, 7);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [projectUpdates, volunteersAtSite, volunteersComingUp, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
+  const [projectUpdates, volunteersAtSite, volunteersComingUp, groupSource, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
     selectRows("impact_entries", [
       ["select", "project,activity_type,entry_date,leader,location,metrics_json,story_highlight,impact_message,follow_up_needed,notes"],
       ["order", "entry_date.desc"],
@@ -242,6 +297,13 @@ async function buildDailyEcoFeContext(runDate) {
       ["limit", "40"],
     ]),
     selectRows("volunteers", [
+      ["select", "project,volunteer_name,agent,start_date,end_date,notes"],
+      ["start_date", `lte.${oneWeekAhead}`],
+      ["end_date", `gte.${runDate}`],
+      ["order", "start_date.asc,project.asc"],
+      ["limit", "120"],
+    ]),
+    selectRows("volunteers", [
       ["select", "project,volunteer_name,start_date,end_date,date_of_birth,age"],
       ["order", "project.asc,volunteer_name.asc"],
       ["limit", "500"],
@@ -260,6 +322,7 @@ async function buildDailyEcoFeContext(runDate) {
       ["limit", "12"],
     ]),
   ]);
+  const schoolCorporateGroupRows = schoolCorporateGroups(groupSource, runDate, 7);
   const birthdaysToday = birthdayRows(birthdaySource, runDate);
 
   return [
@@ -274,6 +337,9 @@ async function buildDailyEcoFeContext(runDate) {
     "",
     `Volunteers coming up from ${addDays(runDate, 1)} to ${twoWeeksAhead}:`,
     ...(volunteersComingUp.length ? groupVolunteerRows(volunteersComingUp) : ["- No upcoming volunteers found in Supabase for the next 14 days."]),
+    "",
+    `School/corporate groups with us now or arriving by ${oneWeekAhead}:`,
+    ...(schoolCorporateGroupRows.length ? schoolCorporateGroupRows.map(formatSchoolCorporateGroup) : ["- No school or corporate groups found for this 7-day window."]),
     "",
     `Birthdays today on ${runDate}:`,
     ...(birthdaysToday.length ? birthdaysToday.map(formatBirthday) : ["- No volunteer birthdays found for today."]),
