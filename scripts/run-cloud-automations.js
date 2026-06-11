@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { automationsForGroup, malaysiaDateParts } = require("../api/lib/cloud-automations");
+const { buildDailyEcoFeContext } = require("../api/lib/fe-context");
 const { buildAutomationNoteContext, sendEmail } = require("../api/lib/gmail");
 const { generateAutomationEmail } = require("../api/lib/openai");
 const { updateGrantDatabase } = require("../api/lib/grant-database");
@@ -22,26 +23,6 @@ function parseArgs(argv) {
 
 function isDatabaseAutomation(id) {
   return ["grant-database-list", "competition-analaysis", "cold-email-crm"].includes(id);
-}
-
-async function sendStatusEmail({ automation, isoDate, status, lines }) {
-  if (!isDatabaseAutomation(automation.id)) return null;
-
-  const body = [
-    `Automation: ${automation.name}`,
-    `Status: ${status}`,
-    `Date: ${isoDate}`,
-    "",
-    ...lines,
-    "",
-    "This is an automatic completion notice from the GitHub Actions cloud runner.",
-  ].join("\n");
-
-  return sendEmail({
-    to: automation.to,
-    subject: `Automation ${status} | ${automation.name} | ${isoDate}`,
-    body,
-  });
 }
 
 function crmRetryLimits() {
@@ -75,6 +56,32 @@ async function updateColdEmailCrmWithRetry({ runDate }) {
     }
   }
   throw lastError;
+}
+
+async function sendStatusEmail({ automation, isoDate, status, lines }) {
+  if (!isDatabaseAutomation(automation.id)) return null;
+  const gmailEnvNames = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN", "GMAIL_FROM"];
+  const missingGmailEnv = gmailEnvNames.filter((name) => !process.env[name]);
+  if (missingGmailEnv.length) {
+    console.warn(`Skipping ${automation.id} status email; missing ${missingGmailEnv.join(", ")}`);
+    return null;
+  }
+
+  const body = [
+    `Automation: ${automation.name}`,
+    `Status: ${status}`,
+    `Date: ${isoDate}`,
+    "",
+    ...lines,
+    "",
+    "This is an automatic completion notice from the GitHub Actions cloud runner.",
+  ].join("\n");
+
+  return sendEmail({
+    to: automation.to,
+    subject: `Automation ${status} | ${automation.name} | ${isoDate}`,
+    body,
+  });
 }
 
 async function main() {
@@ -158,6 +165,16 @@ async function main() {
         }
       } catch (error) {
         console.warn(`Could not load Gmail reply notes for ${automation.id}: ${error.message}`);
+      }
+
+      if (automation.id === "daily-eco-fun-facts") {
+        try {
+          const feContext = await buildDailyEcoFeContext(isoDate);
+          noteContext = [noteContext, feContext].filter(Boolean).join("\n\n");
+          console.log(`Included FE project and volunteer context for ${automation.id}`);
+        } catch (error) {
+          console.warn(`Could not load FE project and volunteer context for ${automation.id}: ${error.message}`);
+        }
       }
 
       const body = await generateAutomationEmail(automation, isoDate, noteContext);
