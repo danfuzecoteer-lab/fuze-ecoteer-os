@@ -98,7 +98,7 @@ function isDateInStay(isoDate, row) {
   return row.start_date <= isoDate && isoDate <= row.end_date;
 }
 
-function birthdayRows(rows, runDate, maxDaysAhead) {
+function birthdayRows(rows, runDate) {
   const runYear = Number(runDate.slice(0, 4));
   return rows
     .map((row) => ({ row, birthday: parseBirthdayParts(row) }))
@@ -113,7 +113,7 @@ function birthdayRows(rows, runDate, maxDaysAhead) {
         birthdayDate: birthdayDateForYear(birthdayMonthDay, birthdayYear),
       };
     })
-    .filter(({ daysAhead }) => daysAhead >= 0 && daysAhead <= maxDaysAhead)
+    .filter(({ daysAhead }) => daysAhead === 0)
     .filter(({ row, birthdayDate }) => isDateInStay(birthdayDate, row))
     .sort((a, b) => a.daysAhead - b.daysAhead || text(a.row.volunteer_name).localeCompare(text(b.row.volunteer_name)));
 }
@@ -161,9 +161,7 @@ async function buildDailyEcoFeContext(runDate) {
       ["limit", "12"],
     ]),
   ]);
-  const birthdays = birthdayRows(birthdaySource, runDate, 7);
-  const birthdaysToday = birthdays.filter((rowInfo) => rowInfo.daysAhead === 0);
-  const upcomingBirthdays = birthdays.filter((rowInfo) => rowInfo.daysAhead > 0);
+  const birthdaysToday = birthdayRows(birthdaySource, runDate);
 
   return [
     "FE internal context for the Fuze Ecoteer updates section only.",
@@ -180,9 +178,6 @@ async function buildDailyEcoFeContext(runDate) {
     "",
     `Birthdays today on ${runDate}:`,
     ...(birthdaysToday.length ? birthdaysToday.map(formatBirthday) : ["- No volunteer birthdays found for today."]),
-    "",
-    "Upcoming birthdays in the next 7 days:",
-    ...(upcomingBirthdays.length ? upcomingBirthdays.map(formatBirthday) : ["- No upcoming volunteer birthdays found in the next 7 days."]),
     "",
     `New vendors from ${twoWeeksAgo} to ${runDate}:`,
     ...(newVendors.length ? newVendors.map(formatVendor) : ["- No new vendor or supplier organisations found in Supabase for the last 14 days."]),
