@@ -24,7 +24,7 @@ const AUTOMATIONS = [
       "Use this exact section order: Eco dad joke first; Global eco news; Perhentian project updates; Volunteers on site; Volunteers coming up; School/corporate groups; Birthdays today only; Volunteer feedback; New vendors.",
       "Start with one short, friendly eco dad joke.",
       "For Global eco news, focus on marine conservation, oceans, turtles, reefs, seagrass, fisheries, plastic pollution, biodiversity, or climate impacts on marine ecosystems. Prefer Malaysia or Southeast Asia regional news when current and useful; otherwise use a strong global marine/environment story.",
-      "For Perhentian project updates, use internal Project updates when provided and prioritise Perhentian Turtle Project, marine, education, conservation, or island operations updates.",
+      "For Perhentian project updates, use internal Project updates and Perhentian project data highlights when provided. Include a few interesting numbers from the actual Perhentian data sheets, especially turtle nesting, hatchery, beach clean-up, patrol, underwater turtle, seagrass, reef, anemone, or stranding data.",
       "For the remaining Fuze Ecoteer update sections, use Volunteers at site, Volunteers coming up, School/corporate groups, Birthdays, Volunteer feedback, and New vendors when those sections are provided.",
       "If Birthdays today lists any people, include a short happy birthday message by name.",
       "Do not include private volunteer contact, passport, emergency, medical, diet, exact birth year, age, payment, balance details, or verbatim feedback that could identify someone.",
