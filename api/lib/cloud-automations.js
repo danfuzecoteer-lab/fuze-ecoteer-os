@@ -23,7 +23,7 @@ const AUTOMATIONS = [
       "Write today's Fuze Ecoteer daily eco email.",
       "Start with a short, friendly eco dad joke.",
       "Then use this structure: a date-specific eco or conservation hook first, current environmental news second, and Fuze Ecoteer updates third.",
-      "For the Fuze Ecoteer updates section, use internal Project updates, Volunteers at site, Volunteers coming up, Birthdays, Volunteer feedback, and New vendors when those sections are provided.",
+      "For the Fuze Ecoteer updates section, use internal Project updates, Volunteers at site, Volunteers coming up, School/corporate groups, Birthdays, Volunteer feedback, and New vendors when those sections are provided.",
       "If Birthdays today lists any people, include a short happy birthday message by name.",
       "Do not include private volunteer contact, passport, emergency, medical, diet, exact birth year, age, payment, balance details, or verbatim feedback that could identify someone.",
       "Keep the hook fun and light. Mention if a fact needs verification.",
