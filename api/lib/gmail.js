@@ -52,17 +52,8 @@ async function gmailRequest(path, options = {}) {
 }
 
 async function sendEmail({ to, subject, body }) {
-  const from = process.env.GMAIL_FROM || "dan.fuzecoteer@gmail.com";
   const accessToken = await getAccessToken();
-  const raw = [
-    `From: ${from}`,
-    `To: ${to.join(", ")}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "",
-    body,
-  ].join("\r\n");
+  const raw = buildRawEmail({ to, subject, body });
 
   const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
@@ -78,6 +69,39 @@ async function sendEmail({ to, subject, body }) {
   }
 
   return response.json();
+}
+
+async function createDraftEmail({ to, subject, body }) {
+  const accessToken = await getAccessToken();
+  const raw = buildRawEmail({ to, subject, body });
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message: { raw: base64UrlEncode(raw) } }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gmail draft creation failed: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
+function buildRawEmail({ to, subject, body }) {
+  const from = process.env.GMAIL_FROM || "dan.fuzecoteer@gmail.com";
+  const recipients = Array.isArray(to) ? to : [to].filter(Boolean);
+  return [
+    `From: ${from}`,
+    recipients.length ? `To: ${recipients.join(", ")}` : "To:",
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    body,
+  ].join("\r\n");
 }
 
 function base64UrlDecode(value = "") {
@@ -190,6 +214,7 @@ async function buildAutomationNoteContext(automation) {
 
 module.exports = {
   buildAutomationNoteContext,
+  createDraftEmail,
   recentAutomationNotes,
   sendEmail,
 };
