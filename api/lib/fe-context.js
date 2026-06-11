@@ -46,9 +46,22 @@ function groupVolunteerRows(rows) {
   });
 }
 
+function formatVendor(row) {
+  const parts = [
+    row.created_at ? row.created_at.slice(0, 10) : "",
+    text(row.name),
+    text(row.organisation_type),
+    text(row.country),
+  ].filter(Boolean);
+  const website = text(row.website);
+  const notes = text(row.notes);
+  return `- ${parts.join(" | ")}${website ? ` | ${website}` : ""}${notes ? `: ${notes}` : ""}`;
+}
+
 async function buildDailyEcoFeContext(runDate) {
+  const twoWeeksAgo = addDays(runDate, -14);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [projectUpdates, volunteersAtSite, volunteersComingUp] = await Promise.all([
+  const [projectUpdates, volunteersAtSite, volunteersComingUp, newVendors] = await Promise.all([
     selectRows("impact_entries", [
       ["select", "project,activity_type,entry_date,leader,location,metrics_json,story_highlight,impact_message,follow_up_needed,notes"],
       ["order", "entry_date.desc"],
@@ -68,6 +81,13 @@ async function buildDailyEcoFeContext(runDate) {
       ["order", "start_date.asc,project.asc"],
       ["limit", "40"],
     ]),
+    selectRows("organisations", [
+      ["select", "name,organisation_type,country,website,notes,created_at"],
+      ["created_at", `gte.${twoWeeksAgo}`],
+      ["or", "(organisation_type.ilike.*vendor*,organisation_type.ilike.*supplier*,name.ilike.*vendor*,name.ilike.*supplier*,notes.ilike.*vendor*,notes.ilike.*supplier*)"],
+      ["order", "created_at.desc"],
+      ["limit", "12"],
+    ]),
   ]);
 
   return [
@@ -82,6 +102,9 @@ async function buildDailyEcoFeContext(runDate) {
     "",
     `Volunteers coming up from ${addDays(runDate, 1)} to ${twoWeeksAhead}:`,
     ...(volunteersComingUp.length ? groupVolunteerRows(volunteersComingUp) : ["- No upcoming volunteers found in Supabase for the next 14 days."]),
+    "",
+    `New vendors from ${twoWeeksAgo} to ${runDate}:`,
+    ...(newVendors.length ? newVendors.map(formatVendor) : ["- No new vendor or supplier organisations found in Supabase for the last 14 days."]),
   ].join("\n");
 }
 
