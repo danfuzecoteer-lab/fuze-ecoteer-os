@@ -125,10 +125,103 @@ function formatBirthday(rowInfo) {
   return `- ${name}${project ? ` (${project})` : ""}: birthday ${timing}`;
 }
 
+function numberAverage(values) {
+  const numbers = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  if (!numbers.length) return null;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function flattenFeedbackComments(row) {
+  const questionComments = Array.isArray(row.question_comments_json) ? row.question_comments_json : [];
+  return [
+    ...questionComments.map((item) => text(item.comment)),
+    text(row.comment),
+  ].filter(Boolean);
+}
+
+function feedbackThemes(rows) {
+  const themePatterns = [
+    ["food", /\b(food|meal|meals|vegetarian|vegan|breakfast|lunch|dinner)\b/i],
+    ["accommodation", /\b(accommodation|room|bed|sleep|toilet|shower|bathroom|mentari|kiara)\b/i],
+    ["staff", /\b(staff|leader|team|guide|coordinator|instructor)\b/i],
+    ["booking/support", /\b(booking|support|email|response|responsive|pre[- ]?departure|guide)\b/i],
+    ["briefing", /\b(briefing|introduction|orientation|arrival)\b/i],
+    ["programme", /\b(programme|program|activity|activities|survey|snorkel|dive|turtle|coral|school)\b/i],
+    ["safety/logistics", /\b(safety|transport|boat|ferry|pickup|schedule|equipment)\b/i],
+  ];
+  const counts = new Map(themePatterns.map(([theme]) => [theme, 0]));
+
+  for (const row of rows) {
+    for (const comment of flattenFeedbackComments(row)) {
+      for (const [theme, pattern] of themePatterns) {
+        if (pattern.test(comment)) {
+          counts.set(theme, counts.get(theme) + 1);
+        }
+      }
+    }
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([theme, count]) => `${theme}: ${count}`);
+}
+
+function lowRatingQuestions(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const questionComments = Array.isArray(row.question_comments_json) ? row.question_comments_json : [];
+    for (const item of questionComments) {
+      const rating = Number(item.rating);
+      const question = text(item.question);
+      if (question && Number.isFinite(rating) && rating > 0 && rating <= 3) {
+        counts.set(question, (counts.get(question) || 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([question, count]) => `${question}: ${count}`);
+}
+
+function feedbackProjectAverages(rows) {
+  const projects = new Map();
+  for (const row of rows) {
+    const project = text(row.project) || "Unknown";
+    if (!projects.has(project)) projects.set(project, []);
+    projects.get(project).push(...(Array.isArray(row.ratings_json) ? row.ratings_json : []));
+  }
+  return [...projects.entries()]
+    .map(([project, ratings]) => [project, numberAverage(ratings)])
+    .filter(([, average]) => average !== null)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([project, average]) => `${project}: ${average.toFixed(1)}/5`);
+}
+
+function formatFeedbackSummary(rows) {
+  if (!rows.length) return ["- No recent volunteer feedback found in Supabase."];
+  const allRatings = rows.flatMap((row) => Array.isArray(row.ratings_json) ? row.ratings_json : []);
+  const average = numberAverage(allRatings);
+  const projectAverages = feedbackProjectAverages(rows);
+  const themes = feedbackThemes(rows);
+  const lowQuestions = lowRatingQuestions(rows);
+
+  return [
+    `- Responses reviewed: ${rows.length}`,
+    average === null ? "- Average rating: not enough rating data" : `- Average rating: ${average.toFixed(1)}/5`,
+    projectAverages.length ? `- Project averages: ${projectAverages.join("; ")}` : "- Project averages: not enough project rating data",
+    themes.length ? `- Common anonymous feedback themes: ${themes.join("; ")}` : "- Common anonymous feedback themes: none detected",
+    lowQuestions.length ? `- Low-rating watch points: ${lowQuestions.join("; ")}` : "- Low-rating watch points: none detected",
+  ];
+}
+
 async function buildDailyEcoFeContext(runDate) {
   const twoWeeksAgo = addDays(runDate, -14);
+  const thirtyDaysAgo = addDays(runDate, -30);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [projectUpdates, volunteersAtSite, volunteersComingUp, birthdaySource, newVendors] = await Promise.all([
+  const [projectUpdates, volunteersAtSite, volunteersComingUp, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
     selectRows("impact_entries", [
       ["select", "project,activity_type,entry_date,leader,location,metrics_json,story_highlight,impact_message,follow_up_needed,notes"],
       ["order", "entry_date.desc"],
@@ -153,6 +246,12 @@ async function buildDailyEcoFeContext(runDate) {
       ["order", "project.asc,volunteer_name.asc"],
       ["limit", "500"],
     ]),
+    selectRows("volunteer_feedback", [
+      ["select", "project,ratings_json,question_comments_json,comment,created_at"],
+      ["created_at", `gte.${thirtyDaysAgo}`],
+      ["order", "created_at.desc"],
+      ["limit", "80"],
+    ]),
     selectRows("organisations", [
       ["select", "name,organisation_type,country,website,notes,created_at"],
       ["created_at", `gte.${twoWeeksAgo}`],
@@ -165,7 +264,7 @@ async function buildDailyEcoFeContext(runDate) {
 
   return [
     "FE internal context for the Fuze Ecoteer updates section only.",
-    "Use the following as practical update material. Do not include private contact details, passport details, emergency contact details, medical/diet details, exact birth years, ages, payment details, or balances.",
+    "Use the following as practical update material. Do not include private contact details, passport details, emergency contact details, medical/diet details, exact birth years, ages, payment details, balances, or verbatim feedback that could identify someone.",
     "",
     "Project updates:",
     ...(projectUpdates.length ? projectUpdates.map(formatImpactEntry) : ["- No recent project updates found in Supabase."]),
@@ -178,6 +277,9 @@ async function buildDailyEcoFeContext(runDate) {
     "",
     `Birthdays today on ${runDate}:`,
     ...(birthdaysToday.length ? birthdaysToday.map(formatBirthday) : ["- No volunteer birthdays found for today."]),
+    "",
+    `Volunteer feedback summary from ${thirtyDaysAgo} to ${runDate}:`,
+    ...formatFeedbackSummary(volunteerFeedback),
     "",
     `New vendors from ${twoWeeksAgo} to ${runDate}:`,
     ...(newVendors.length ? newVendors.map(formatVendor) : ["- No new vendor or supplier organisations found in Supabase for the last 14 days."]),
