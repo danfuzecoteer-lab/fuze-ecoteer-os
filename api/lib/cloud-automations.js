@@ -22,6 +22,8 @@ const AUTOMATIONS = [
     prompt: [
       "Write today's Fuze Ecoteer daily eco email.",
       "Use this structure: a date-specific eco or conservation hook first, current environmental news second, and Fuze Ecoteer updates third.",
+      "For the Fuze Ecoteer updates section, use internal Project updates, Volunteers at site, and Volunteers coming up when those sections are provided.",
+      "Do not include private volunteer contact, passport, emergency, medical, diet, payment, or balance details.",
       "Keep the hook fun and light. Mention if a fact needs verification.",
       "Use the FE app/public Fuze Ecoteer context where available, but do not invent internal updates.",
     ].join("\n"),
@@ -95,7 +97,7 @@ const AUTOMATIONS = [
     subjectPrefix: "Cold Email CRM",
     prompt: [
       "Summarise the weekly cold-email CRM database update for Fuze Ecoteer.",
-      "Focus on schools, day cares / tadika / taska, and corporate HR/CSR leads.",
+      "Focus on schools, tadika / preschool leads, universities, corporate HR/CSR leads, and network / referral partners.",
       "Explain which lead segments look strongest, what must be verified before outreach, and what the email-writing bot should do next.",
       "Do not send outreach emails. This is a research and CRM update only.",
     ].join("\n"),
@@ -155,6 +157,11 @@ function automationsForGroup(group, date = new Date()) {
 
   const { weekday } = malaysiaDateParts(date);
   return AUTOMATIONS.filter((automation) => {
+    if (group === "daily-7am") {
+      if (automation.group === "daily-8am" || automation.group === "daily-9am") return true;
+      if (automation.group === "tuesday-9am") return weekday === "Tue";
+      return false;
+    }
     if (automation.group === group) return true;
     if (group === "daily-9am" && automation.group === "tuesday-9am") return weekday === "Tue";
     return false;
