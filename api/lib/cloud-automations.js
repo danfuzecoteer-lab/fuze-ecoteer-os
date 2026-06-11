@@ -5,7 +5,7 @@ const TEAM_RECIPIENTS = [
   "amelia.fuze.ecoteer@gmail.com",
   "suhailin.fuzeecoteer@gmail.com",
   "naquiah@fuze-ecoteer.com",
-  "shafiqah@fuzeecoteer.com",
+  "shafiqah@fuze-ecoteer.com",
   "balqis@fuze-ecoteer.com",
   "Carmen.fuzeecoteer@gmail.com",
 ];
