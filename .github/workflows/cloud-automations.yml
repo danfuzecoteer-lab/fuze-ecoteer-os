@@ -6,25 +6,28 @@ on:
       - main
     paths:
       - "automation-briefs/competitor-analysis.md"
+      - "automation-briefs/cold-email-crm.md"
       - "api/lib/marketing-database.js"
+      - "api/lib/fe-context.js"
       - "api/lib/supabase-admin.js"
       - "supabase_marketing_schema.sql"
       - ".github/workflows/cloud-automations.yml"
   schedule:
-    # 7:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
-    - cron: "7 0 * * *"
-    # 8:07 AM Asia/Kuala_Lumpur. Avoid the top of the hour, where GitHub scheduled runs can be delayed or dropped.
-    - cron: "7 1 * * *"
-    # Sunday 6:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
+    # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
+    - cron: "7 23 * * *"
+    # Sunday 10:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
     - cron: "7 14 * * 0"
+    # Sunday 11:07 PM Asia/Kuala_Lumpur. Weekly CRM cold-email research.
+    - cron: "7 15 * * 0"
   workflow_dispatch:
     inputs:
       group:
         description: "Automation group to run"
         required: true
-        default: "daily-8am"
+        default: "daily-7am"
         type: choice
         options:
+          - daily-7am
           - daily-8am
           - daily-9am
           - competition-analysis
@@ -42,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
       GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
@@ -65,16 +69,23 @@ jobs:
             echo "group=${{ inputs.group }}" >> "$GITHUB_OUTPUT"
             echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+            changed="$(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}")"
+            if echo "$changed" | grep -q '^automation-briefs/cold-email-crm\.md$'; then
+              echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
+            elif echo "$changed" | grep -q '^automation-briefs/competitor-analysis\.md$'; then
+              echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+            else
+              echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+            fi
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 0 * * *" ]; then
-            echo "group=daily-8am" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 1 * * *" ]; then
-            echo "group=daily-9am" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
+            echo "group=daily-7am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
             echo "group=sunday-10pm" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "7 15 * * 0" ]; then
+            echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "Unknown schedule: ${{ github.event.schedule }}" >&2
