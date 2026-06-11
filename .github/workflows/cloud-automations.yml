@@ -7,6 +7,7 @@ on:
     paths:
       - "automation-briefs/competitor-analysis.md"
       - "automation-briefs/cold-email-crm.md"
+      - "automation-briefs/outreach-draft-agents.md"
   schedule:
     # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
     - cron: "7 23 * * *"
@@ -75,6 +76,8 @@ jobs:
               echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
             elif echo "$changed" | grep -q '^automation-briefs/competitor-analysis\.md$'; then
               echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+            elif echo "$changed" | grep -q '^automation-briefs/outreach-draft-agents\.md$'; then
+              echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
             else
               echo "Push event did not change a runnable automation brief; use workflow_dispatch or the schedule instead." >&2
               exit 1
