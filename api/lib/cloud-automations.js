@@ -107,6 +107,48 @@ const AUTOMATIONS = [
     ].join("\n"),
   },
   {
+    id: "education-outreach-finder",
+    name: "Education Outreach Finder",
+    group: "weekday-8am-outreach",
+    to: DAN_RECIPIENT,
+    subjectPrefix: "Education Outreach Drafts",
+    prompt: [
+      "Create 10 Gmail drafts for education outreach.",
+      "Use the Supabase cold-email CRM, marketing research and automation data.",
+      "Focus on schools, taska, tadika, universities and education groups, especially Malaysia, Singapore, Thailand, Hong Kong, Korea and China.",
+      "Promote Fuze Ecoteer school camps, conservation expeditions and service-learning trips.",
+      "Save drafts only. Do not send outreach emails automatically.",
+    ].join("\n"),
+  },
+  {
+    id: "corporate-outreach-finder",
+    name: "Corporate Outreach Finder",
+    group: "weekday-8am-outreach",
+    to: DAN_RECIPIENT,
+    subjectPrefix: "Corporate Outreach Drafts",
+    prompt: [
+      "Create 10 Gmail drafts for corporate outreach.",
+      "Use the Supabase cold-email CRM, marketing research and automation data.",
+      "Focus on corporate HR, CSR, ESG, sustainability and employee engagement teams in Kuala Lumpur, Selangor, Kelantan, Terengganu and Pahang.",
+      "Promote Fuze Ecoteer corporate team building with a cause, CSR impact days and ESG volunteering.",
+      "Save drafts only. Do not send outreach emails automatically.",
+    ].join("\n"),
+  },
+  {
+    id: "travel-outreach-finder",
+    name: "Travel Outreach Finder",
+    group: "weekday-8am-outreach",
+    to: DAN_RECIPIENT,
+    subjectPrefix: "Travel Outreach Drafts",
+    prompt: [
+      "Create 10 Gmail drafts for travel and partnership outreach.",
+      "Use the Supabase cold-email CRM, marketing research and automation data.",
+      "Focus on travel websites, travel agents, career services, gap-year partners, influencers and collaboration partners.",
+      "Promote Fuze Ecoteer Perhentian volunteer conservation projects: PTP, PMRS and PEEP.",
+      "Save drafts only. Do not send outreach emails automatically.",
+    ].join("\n"),
+  },
+  {
     id: "grant-database-list",
     name: "Grant Database List",
     group: "grant-database",
@@ -157,6 +199,15 @@ function automationsForGroup(group, date = new Date()) {
   }
   if (group === "competition-analysis") {
     return AUTOMATIONS.filter((automation) => automation.id === "competition-analaysis");
+  }
+  if (group === "education-outreach") {
+    return AUTOMATIONS.filter((automation) => automation.id === "education-outreach-finder");
+  }
+  if (group === "corporate-outreach") {
+    return AUTOMATIONS.filter((automation) => automation.id === "corporate-outreach-finder");
+  }
+  if (group === "travel-outreach") {
+    return AUTOMATIONS.filter((automation) => automation.id === "travel-outreach-finder");
   }
 
   const { weekday } = malaysiaDateParts(date);
