@@ -1,4 +1,5 @@
 const { selectRows } = require("./supabase-admin");
+const { perhentianDataHighlights } = require("./perhentian-data-highlights");
 
 function addDays(isoDate, days) {
   const date = new Date(`${isoDate}T00:00:00Z`);
@@ -276,12 +277,13 @@ async function buildDailyEcoFeContext(runDate) {
   const thirtyDaysAgo = addDays(runDate, -30);
   const oneWeekAhead = addDays(runDate, 7);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [projectUpdates, volunteersAtSite, volunteersComingUp, groupSource, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
+  const [projectUpdates, perhentianHighlights, volunteersAtSite, volunteersComingUp, groupSource, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
     selectRows("impact_entries", [
       ["select", "project,activity_type,entry_date,leader,location,metrics_json,story_highlight,impact_message,follow_up_needed,notes"],
       ["order", "entry_date.desc"],
       ["limit", "8"],
     ]),
+    perhentianDataHighlights(runDate),
     selectRows("volunteers", [
       ["select", "project,volunteer_name,nationality,agent,start_date,end_date,dive_course,room_upgrade,notes"],
       ["start_date", `lte.${runDate}`],
@@ -331,6 +333,9 @@ async function buildDailyEcoFeContext(runDate) {
     "",
     "Project updates:",
     ...(projectUpdates.length ? projectUpdates.map(formatImpactEntry) : ["- No recent project updates found in Supabase."]),
+    "",
+    "Perhentian project data highlights from actual data sheets:",
+    ...perhentianHighlights,
     "",
     `Volunteers at site on ${runDate}:`,
     ...(volunteersAtSite.length ? groupVolunteerRows(volunteersAtSite) : ["- No current volunteers found in Supabase for this date."]),
