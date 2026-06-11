@@ -10,6 +10,8 @@ on:
   schedule:
     # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
     - cron: "7 23 * * *"
+    # Weekdays 8:07 AM Asia/Kuala_Lumpur. Outreach agents create Gmail drafts only.
+    - cron: "7 0 * * 1-5"
     # Sunday 10:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
     - cron: "7 14 * * 0"
     # Sunday 11:07 PM Asia/Kuala_Lumpur. Weekly CRM cold-email research.
@@ -28,6 +30,10 @@ on:
           - competition-analysis
           - grant-database
           - marketing-crm
+          - weekday-8am-outreach
+          - education-outreach
+          - corporate-outreach
+          - travel-outreach
           - sunday-10pm
       dry_run:
         description: "Dry run only: true means do not generate/send email"
@@ -76,6 +82,9 @@ jobs:
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
             echo "group=daily-7am" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "7 0 * * 1-5" ]; then
+            echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
             echo "group=sunday-10pm" >> "$GITHUB_OUTPUT"
