@@ -50,6 +50,7 @@ For Vercel endpoint testing only, also set `CRON_SECRET`.
 
 The Daily Eco email adds internal FE context from Supabase before generation:
 
+- first line: a short eco dad joke
 - recent `impact_entries` as Project updates
 - current `volunteers` as Volunteers at site
 - volunteers starting in the next 14 days as Volunteers coming up
