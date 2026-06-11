@@ -7,7 +7,6 @@ on:
     paths:
       - "automation-briefs/competitor-analysis.md"
       - "automation-briefs/cold-email-crm.md"
-      - ".github/workflows/cloud-automations.yml"
   schedule:
     # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
     - cron: "7 23 * * *"
