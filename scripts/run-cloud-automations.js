@@ -6,6 +6,7 @@ const { buildAutomationNoteContext, sendEmail } = require("../api/lib/gmail");
 const { generateAutomationEmail } = require("../api/lib/openai");
 const { updateGrantDatabase } = require("../api/lib/grant-database");
 const { updateColdEmailCrmDatabase, updateMarketingResearchDatabase } = require("../api/lib/marketing-database");
+const { createOutreachDrafts } = require("../api/lib/outreach-drafts");
 
 function parseArgs(argv) {
   const args = { group: "", dryRun: false };
@@ -22,7 +23,22 @@ function parseArgs(argv) {
 }
 
 function isDatabaseAutomation(id) {
-  return ["grant-database-list", "competition-analaysis", "cold-email-crm"].includes(id);
+  return [
+    "grant-database-list",
+    "competition-analaysis",
+    "cold-email-crm",
+    "education-outreach-finder",
+    "corporate-outreach-finder",
+    "travel-outreach-finder",
+  ].includes(id);
+}
+
+function isOutreachDraftAutomation(id) {
+  return [
+    "education-outreach-finder",
+    "corporate-outreach-finder",
+    "travel-outreach-finder",
+  ].includes(id);
 }
 
 function crmRetryLimits() {
@@ -124,6 +140,51 @@ async function main() {
           lines,
         });
         console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
+        continue;
+      }
+
+      if (isOutreachDraftAutomation(automation.id)) {
+        console.log(`${dryRun ? "Planning" : "Creating"} Gmail outreach drafts for ${automation.name}`);
+        const result = await createOutreachDrafts({
+          agentId: automation.id,
+          runDate: isoDate,
+          limit: 10,
+          dryRun,
+        });
+
+        console.log(`${automation.id}: ${dryRun ? "selected" : "created"} ${dryRun ? result.selectedLeads.length : result.created.length} draft candidate/s`);
+        const lines = [
+          dryRun ? "Dry run only: no Gmail drafts created." : "Gmail drafts created only; no outreach emails were sent.",
+          `Drafts ${dryRun ? "planned" : "created"}: ${dryRun ? result.selectedLeads.length : result.created.length}`,
+          `Matched CRM leads checked: ${result.selectedLeads.length}`,
+        ];
+        if (result.created.length) {
+          lines.push("Draft leads:");
+          result.created.slice(0, 10).forEach((draft) => {
+            lines.push(`- ${draft.leadName} <${draft.to}> (${draft.draftId || "draft"})`);
+          });
+        } else if (result.selectedLeads.length) {
+          lines.push("Candidate leads:");
+          result.selectedLeads.slice(0, 10).forEach((lead) => {
+            lines.push(`- ${lead.organisation_name} <${lead.email}>`);
+          });
+        }
+        if (result.skipped.length) {
+          lines.push("Skipped:");
+          result.skipped.slice(0, 10).forEach((item) => lines.push(`- ${item}`));
+        }
+
+        if (!dryRun) {
+          const status = await sendStatusEmail({
+            automation,
+            isoDate,
+            status: "Completed",
+            lines,
+          });
+          console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
+        } else {
+          console.log(lines.join("\n"));
+        }
         continue;
       }
 
