@@ -33,7 +33,7 @@ const AUTOMATIONS = [
       "Perhentian project updates: this is the most important FE section. If a Priority Project/Fun Impact update is provided, include it. Use the headline/story in a lively way. Mention only one or two Perhentian data highlights at most.",
       "Data rule: any project data number must include its time period or date range when supplied, for example '296,552 eggs logged from 2015 to 2025'. Do not present a large total without saying what period it covers.",
       "Volunteers on site: mention each person by name with the project they are with when available, for example Name - PTP. Keep it to one compact line or bullet group. Never include payments, emergency contacts, medical, diet, passport, phone, email, age, or balance details.",
-      "Volunteers coming up: mention arrivals within 14 days, with each person\'s name, project they are joining when available, and start date where available. Keep it brief.",
+      "Volunteers coming up: mention arrivals within 14 days, with each person's name, project they are joining when available, and start date where available. Keep it brief.",
       "School/corporate groups: mention only groups with FE now or arriving within 7 days.",
       "Volunteer feedback: anonymize. Summarize as one useful theme or action point. Do not quote comments verbatim.",
       "New vendors: include only genuinely new/useful vendor notes. Skip if not useful.",
@@ -163,6 +163,21 @@ const AUTOMATIONS = [
     ].join("\n"),
   },
   {
+    id: "re-engager",
+    name: "Re-engager",
+    group: "weekday-8am-outreach",
+    to: DAN_RECIPIENT,
+    subjectPrefix: "Re-engagement Drafts",
+    prompt: [
+      "Create up to 10 Gmail drafts for re-engagement outreach.",
+      "Review Daniel's Gmail sent threads and find people who have not replied in the past month.",
+      "Only use threads where Daniel was the last person to send an email, the last email is older than one month, and there is no later reply.",
+      "Read the previous thread context and write a short reconnection draft.",
+      "Keep the tone light, useful and low-pressure.",
+      "Save drafts only. Do not send outreach emails automatically.",
+    ].join("\n"),
+  },
+  {
     id: "grant-database-list",
     name: "Grant Database List",
     group: "grant-database",
@@ -222,6 +237,9 @@ function automationsForGroup(group, date = new Date()) {
   }
   if (group === "travel-outreach") {
     return AUTOMATIONS.filter((automation) => automation.id === "travel-outreach-finder");
+  }
+  if (group === "re-engager") {
+    return AUTOMATIONS.filter((automation) => automation.id === "re-engager");
   }
 
   const { weekday } = malaysiaDateParts(date);
