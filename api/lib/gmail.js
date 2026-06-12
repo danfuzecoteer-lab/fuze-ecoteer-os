@@ -294,7 +294,7 @@ function isOwnMessage(message) {
   return Boolean(fromAddress && configured && fromAddress === configured);
 }
 
-async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 180, maxResults = 10 } = {}) {
+async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 730, maxResults = 10 } = {}) {
   const query = [
     "in:sent",
     `older_than:${olderThanDays}d`,
@@ -303,7 +303,7 @@ async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 180,
     "-subject:\"Automation Failed\"",
     "-subject:\"Daily Eco Fun Fact\"",
   ].join(" ");
-  const messages = await searchMessages({ query, maxResults: maxResults * 8 });
+  const messages = await searchMessages({ query, maxResults: maxResults * 30 });
   const now = Date.now();
   const cutoff = now - olderThanDays * 24 * 60 * 60 * 1000;
   const seenThreads = new Set();
@@ -367,7 +367,7 @@ function isLikelyReplyOrNote(message, subjectPrefix) {
 }
 
 async function recentAutomationNotes({ subjectPrefix, days = 45, maxResults = 8 }) {
-  const query = `newer_than:${days}d subject:\"${subjectPrefix}\"`;
+  const query = `newer_than:${days}d subject:"${subjectPrefix}"`;
   const messages = await searchMessages({ query, maxResults: maxResults * 3 });
   const fetched = await Promise.all(messages.map((message) => getMessage(message.id)));
 
