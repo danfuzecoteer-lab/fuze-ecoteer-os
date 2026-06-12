@@ -172,7 +172,7 @@ function buildRawEmail({ to, subject, body }) {
     recipients.length ? `To: ${recipients.join(", ")}` : "To:",
     `Subject: ${subject}`,
     "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    `Content-Type: multipart/alternative; boundary=\"${boundary}\"`,
     "",
     `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",
@@ -328,6 +328,12 @@ async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 180,
     const inboundAfterLatestSent = sorted.some((item) => !isOwnMessage(item) && item.internalDate > latestSent.internalDate);
     if (inboundAfterLatestSent) continue;
 
+    const existingDrafts = await searchMessages({
+      query: `in:drafts to:${to} newer_than:${olderThanDays}d`,
+      maxResults: 1,
+    }).catch(() => []);
+    if (existingDrafts.length) continue;
+
     candidates.push({
       to,
       subject: latestSent.subject || latest.subject || "Following up",
@@ -361,7 +367,7 @@ function isLikelyReplyOrNote(message, subjectPrefix) {
 }
 
 async function recentAutomationNotes({ subjectPrefix, days = 45, maxResults = 8 }) {
-  const query = `newer_than:${days}d subject:"${subjectPrefix}"`;
+  const query = `newer_than:${days}d subject:\"${subjectPrefix}\"`;
   const messages = await searchMessages({ query, maxResults: maxResults * 3 });
   const fetched = await Promise.all(messages.map((message) => getMessage(message.id)));
 
