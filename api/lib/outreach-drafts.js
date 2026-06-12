@@ -451,7 +451,7 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
   if (agentId === "re-engager") {
     let candidates;
     try {
-      candidates = await reengagementCandidates({ olderThanDays: 30, newerThanDays: 180, maxResults: limit });
+      candidates = await reengagementCandidates({ olderThanDays: 30, newerThanDays: 730, maxResults: limit });
     } catch (error) {
       return {
         profile,
@@ -467,7 +467,7 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
         profile,
         selectedLeads: [],
         created: [],
-        skipped: ["No sent Gmail threads matched the re-engagement rule: last message from Daniel, older than one month, with no later reply."],
+        skipped: ["No sent Gmail threads matched the re-engagement rule: last message from Daniel, older than one month, with no later reply. Draft-only outreach will not qualify until Daniel sends it, and brand-new sent emails will not qualify until they are at least one month old."],
         dryRun,
       };
     }
