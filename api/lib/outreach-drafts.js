@@ -1,5 +1,5 @@
 const { createDraftEmail, recentSentEmailExamples } = require("./gmail");
-const { selectRows } = require("./supabase-admin");
+const { selectRows, updateRows } = require("./supabase-admin");
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -102,6 +102,16 @@ function satisfiesRequiredLeadTerms(profile, lead) {
   return profile.requireTerms.some((term) => haystack.includes(String(term).toLowerCase()));
 }
 
+function isPreviouslyDrafted(lead) {
+  const status = cleanText(lead.status).toLowerCase();
+  return Boolean(
+    lead.last_drafted_at ||
+    status.startsWith("drafted") ||
+    status.includes("draft email made") ||
+    status.includes("draft created")
+  );
+}
+
 function scoreLead(profile, lead) {
   let score = 0;
   const haystack = [
@@ -131,6 +141,7 @@ function pickLeads(profile, leads, limit) {
   const candidates = leads
     .filter((lead) => lead && cleanText(lead.organisation_name))
     .filter((lead) => isValidEmail(lead.email))
+    .filter((lead) => !isPreviouslyDrafted(lead))
     .filter((lead) => !isRejectedLead(profile, lead))
     .filter((lead) => satisfiesRequiredLeadTerms(profile, lead))
     .map((lead) => ({ ...lead, _score: scoreLead(profile, lead) }))
@@ -298,7 +309,7 @@ function extractJson(text, label) {
 async function loadOutreachContext() {
   const [leads, researchRows] = await Promise.all([
     selectRows("marketing_cold_email_leads", [
-      ["select", "lead_segment,organisation_name,country,city,website,contact_department,contact_name,email,linkedin_url,research_notes,likely_need,recommended_offer,personalization_angle,priority,status,source,confidence,last_seen_at"],
+      ["select", "id,lead_segment,organisation_name,country,city,website,contact_department,contact_name,email,linkedin_url,research_notes,likely_need,recommended_offer,personalization_angle,priority,status,next_action,source,confidence,run_date,last_seen_at,last_drafted_at,last_drafted_by_agent,last_draft_id,last_draft_message_id,draft_count"],
       ["order", "last_seen_at.desc.nullslast"],
       ["limit", "250"],
     ]),
@@ -310,6 +321,31 @@ async function loadOutreachContext() {
   ]);
 
   return { leads, researchRows };
+}
+
+async function markLeadDrafted({ lead, profile, draft, runDate }) {
+  const now = new Date().toISOString();
+  const draftCount = Number.isFinite(Number(lead.draft_count)) ? Number(lead.draft_count) + 1 : 1;
+  const values = {
+    status: `drafted ${runDate} by ${profile.name}`,
+    next_action: "Review Gmail draft before sending",
+    last_drafted_at: now,
+    last_drafted_by_agent: profile.name,
+    last_draft_id: draft.id || null,
+    last_draft_message_id: draft.message && draft.message.id ? draft.message.id : null,
+    draft_count: draftCount,
+    updated_at: now,
+  };
+
+  if (lead.id) {
+    return updateRows("marketing_cold_email_leads", [["id", `eq.${lead.id}`]], values);
+  }
+
+  return updateRows("marketing_cold_email_leads", [
+    ["lead_segment", `eq.${lead.lead_segment}`],
+    ["organisation_name", `eq.${lead.organisation_name}`],
+    ["country", `eq.${lead.country}`],
+  ], values);
 }
 
 async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = false } = {}) {
@@ -387,6 +423,7 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
       subject: cleanText(plan.subject).slice(0, 180) || `${profile.name} outreach`,
       body: cleanText(plan.body),
     });
+    await markLeadDrafted({ lead: matchingLead, profile, draft, runDate });
     created.push({
       draftId: draft.id,
       messageId: draft.message && draft.message.id,
