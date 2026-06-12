@@ -8,6 +8,10 @@ on:
       - "automation-briefs/competitor-analysis.md"
       - "automation-briefs/cold-email-crm.md"
       - "automation-briefs/outreach-draft-agents.md"
+      - "api/lib/outreach-drafts.js"
+      - "api/lib/gmail.js"
+      - "api/lib/cloud-automations.js"
+      - "scripts/run-cloud-automations.js"
   schedule:
     # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
     - cron: "7 23 * * *"
@@ -79,6 +83,8 @@ jobs:
             elif echo "$changed" | grep -q '^automation-briefs/competitor-analysis\.md$'; then
               echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
             elif echo "$changed" | grep -q '^automation-briefs/outreach-draft-agents\.md$'; then
+              echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
+            elif echo "$changed" | grep -Eq '^(api/lib/outreach-drafts\.js|api/lib/gmail\.js|api/lib/cloud-automations\.js|scripts/run-cloud-automations\.js)$'; then
               echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
             else
               echo "Push event did not change a runnable automation brief; use workflow_dispatch or the schedule instead." >&2
