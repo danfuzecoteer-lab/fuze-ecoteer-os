@@ -7,7 +7,6 @@ on:
     paths:
       - "automation-briefs/competitor-analysis.md"
       - "automation-briefs/cold-email-crm.md"
-      - "automation-briefs/daily-eco-test.md"
       - "automation-briefs/outreach-draft-agents.md"
       - "api/lib/outreach-drafts.js"
       - "api/lib/gmail.js"
@@ -42,6 +41,7 @@ on:
           - education-outreach
           - corporate-outreach
           - travel-outreach
+          - re-engager
           - sunday-10pm
       dry_run:
         description: "Dry run only: true means do not generate/send email"
@@ -90,12 +90,7 @@ jobs:
             echo "only_id=${{ inputs.only_id }}" >> "$GITHUB_OUTPUT"
             echo "test_to=${{ inputs.test_to }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "push" ]; then
-            if [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/daily-eco-test.md') }}" = "true" ]; then
-              echo "group=daily-7am" >> "$GITHUB_OUTPUT"
-              echo "dry_run=false" >> "$GITHUB_OUTPUT"
-              echo "only_id=daily-eco-fun-facts" >> "$GITHUB_OUTPUT"
-              echo "test_to=dan.fuzecoteer@gmail.com" >> "$GITHUB_OUTPUT"
-            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/cold-email-crm.md') }}" = "true" ]; then
+            if [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/cold-email-crm.md') }}" = "true" ]; then
               echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
               echo "dry_run=true" >> "$GITHUB_OUTPUT"
             elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/competitor-analysis.md') }}" = "true" ]; then
