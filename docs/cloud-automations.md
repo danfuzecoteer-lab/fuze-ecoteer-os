@@ -50,16 +50,18 @@ For Vercel endpoint testing only, also set `CRON_SECRET`.
 
 The Daily Eco email adds internal FE context from Supabase before generation:
 
-- first line: a short eco dad joke
+- birthday greeting first when a volunteer has a birthday today; otherwise no birthday section is printed
+- then a short eco dad joke
 - global eco news with a marine focus, preferring Malaysia or Southeast Asia where possible
-- recent `impact_entries` as Project updates
-- actual Perhentian project data highlights from embedded FE data sheets, including turtle nesting, hatchery, beach clean-up, patrol, underwater turtle, seagrass, reef, anemone, and stranding data
+- newest `impact_entries` / Fun Impact item prioritized as the Project update
+- one or two actual Perhentian project data highlights from embedded FE data sheets, not a long data dump
 - current `volunteers` as Volunteers at site
 - volunteers starting in the next 14 days as Volunteers coming up
 - school/corporate groups currently with FE or arriving in the next 7 days
 - volunteer birth dates as Birthdays today only
 - anonymized `volunteer_feedback` summaries, rating themes, and low-rating watch points
 - recent vendor/supplier `organisations` as New vendors
+- HTML email rendering with markdown bold converted to real bold text, so raw `**` markers should not show in Gmail
 
 The context intentionally excludes contact, passport, emergency, medical, diet, exact birth year, age, payment, balance details, and verbatim feedback that could identify someone.
 
