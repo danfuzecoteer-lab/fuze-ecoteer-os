@@ -89,6 +89,21 @@ function latestDate(rows, field) {
     .at(-1) || "";
 }
 
+function dateRangeLabel(rows, field, runDate) {
+  const dates = rows
+    .map((row) => parseAnyDate(row[field]))
+    .filter(Boolean)
+    .sort();
+  if (!dates.length) return "date range not recorded";
+  const first = dates[0];
+  const last = dates.at(-1);
+  if (first.slice(0, 4) === runDate.slice(0, 4) && last <= runDate) {
+    return `${runDate.slice(0, 4)} to date`;
+  }
+  if (first === last) return first;
+  return `${first} to ${last}`;
+}
+
 function uniqueCount(rows, field) {
   return new Set(rows.map((row) => text(row[field])).filter(Boolean)).size;
 }
@@ -162,14 +177,14 @@ async function perhentianDataHighlights(runDate) {
     const hostedAnemones = countMatching(anemone, "hosting_status", /^(1|yes|y|true|host)/i);
 
     return [
-      `- Beach clean-up data: ${formatNumber(currentBcu.length)} records; ${formatNumber(sumField(currentBcu, "total_trash_count"))} trash items and ${formatNumber(sumField(currentBcu, "trash_weight_kg"), 1)} kg recorded${latestDate(currentBcu, "date") ? `; latest record ${latestDate(currentBcu, "date")}` : ""}.`,
-      `- Hatchery data: ${formatNumber(currentHatchery.length)} records; ${formatNumber(sumField(currentHatchery, "eggs"))} eggs logged${hatcherySuccess === null ? "" : `; average recorded success ${formatNumber(hatcherySuccess, 1)}%`}.`,
-      `- Nesting data: ${formatNumber(currentNesting.length)} activity records; ${formatNumber(countMatching(currentNesting, "activity", /\bN\b|nest/i))} nest-related records and ${formatNumber(sumField(currentNesting, "eggs"))} eggs noted.`,
-      `- Patrol log: ${formatNumber(currentPatrol.length)} patrol records across ${formatNumber(uniqueCount(currentPatrol, "nesting_location"))} locations; ${formatNumber(countMatching(currentPatrol, "poachers", /poach|boat|net/i))} poacher/boat/net watch notes.`,
-      `- Stranded turtles: ${formatNumber(currentStranded.length)} records; ${formatNumber(uniqueCount(currentStranded, "species"))} species/categories recorded; latest record ${latestDate(currentStranded, "date_discovered") || "not dated"}.`,
-      `- Underwater turtles: ${formatNumber(currentUnderwater.length)} sighting records and ${formatNumber(uniqueCount(currentUnderwater, "turtle_id"))} turtle IDs; ${formatNumber(currentUnderwaterLog.length)} survey log entries.`,
+      `- Beach clean-up data (${dateRangeLabel(currentBcu, "date", runDate)}): ${formatNumber(currentBcu.length)} records; ${formatNumber(sumField(currentBcu, "total_trash_count"))} trash items and ${formatNumber(sumField(currentBcu, "trash_weight_kg"), 1)} kg recorded${latestDate(currentBcu, "date") ? `; latest record ${latestDate(currentBcu, "date")}` : ""}.`,
+      `- Hatchery data (${dateRangeLabel(currentHatchery, "date_laid_dd_mm_yyyy", runDate)}): ${formatNumber(currentHatchery.length)} records; ${formatNumber(sumField(currentHatchery, "eggs"))} eggs logged${hatcherySuccess === null ? "" : `; average recorded success ${formatNumber(hatcherySuccess, 1)}%`}.`,
+      `- Nesting data (${dateRangeLabel(currentNesting, "date_discovered", runDate)}): ${formatNumber(currentNesting.length)} activity records; ${formatNumber(countMatching(currentNesting, "activity", /\bN\b|nest/i))} nest-related records and ${formatNumber(sumField(currentNesting, "eggs"))} eggs noted.`,
+      `- Patrol log (${dateRangeLabel(currentPatrol, "date", runDate)}): ${formatNumber(currentPatrol.length)} patrol records across ${formatNumber(uniqueCount(currentPatrol, "nesting_location"))} locations; ${formatNumber(countMatching(currentPatrol, "poachers", /poach|boat|net/i))} poacher/boat/net watch notes.`,
+      `- Stranded turtles (${dateRangeLabel(currentStranded, "date_discovered", runDate)}): ${formatNumber(currentStranded.length)} records; ${formatNumber(uniqueCount(currentStranded, "species"))} species/categories recorded; latest record ${latestDate(currentStranded, "date_discovered") || "not dated"}.`,
+      `- Underwater turtles (${dateRangeLabel(currentUnderwater, "date", runDate)}): ${formatNumber(currentUnderwater.length)} sighting records and ${formatNumber(uniqueCount(currentUnderwater, "turtle_id"))} turtle IDs; ${formatNumber(currentUnderwaterLog.length)} survey log entries.`,
       `- Anemone data: ${formatNumber(anemone.length)} survey records; ${formatNumber(hostedAnemones)} records show hosting status; ${formatNumber(uniqueCount(anemone, "fish_species"))} fish-species codes recorded.`,
-      `- Habitat survey data: ${formatNumber(currentSeagrass.length)} seagrass records${seagrassCoverage === null ? "" : ` averaging ${formatNumber(seagrassCoverage, 1)}% cover`}; ROLL surveys cover ${formatNumber(uniqueCount(currentRollSurveys, "site_name"))} sites${liveCoralAverage === null ? "" : ` with average live-coral metric ${formatNumber(liveCoralAverage, 1)}%`}.`,
+      `- Habitat survey data (${dateRangeLabel(currentSeagrass, "date", runDate)}): ${formatNumber(currentSeagrass.length)} seagrass records${seagrassCoverage === null ? "" : ` averaging ${formatNumber(seagrassCoverage, 1)}% cover`}; ROLL surveys cover ${formatNumber(uniqueCount(currentRollSurveys, "site_name"))} sites${liveCoralAverage === null ? "" : ` with average live-coral metric ${formatNumber(liveCoralAverage, 1)}%`}.`,
     ];
   } catch (error) {
     return [`- Perhentian embedded project data could not be loaded today: ${error.message}`];
