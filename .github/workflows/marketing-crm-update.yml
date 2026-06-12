@@ -1,16 +1,6 @@
 name: Marketing CRM Update
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "scripts/run-cloud-automations.js"
-      - "api/lib/marketing-database.js"
-      - "api/lib/cloud-automations.js"
-      - "api/lib/supabase-admin.js"
-      - "automation-briefs/cold-email-crm.md"
-      - ".github/workflows/marketing-crm-update.yml"
   schedule:
     # Monday 9:17 AM Asia/Kuala_Lumpur.
     - cron: "17 1 * * 1"
@@ -21,8 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+      OPENAI_MODEL: gpt-5.4-mini
       GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
       GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
       GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
