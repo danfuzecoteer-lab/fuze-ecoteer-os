@@ -29,15 +29,23 @@ If Vercel Cron is enabled later, schedules should use UTC. Kuala Lumpur is UTC+8
 ## Required GitHub Secrets
 
 - `OPENAI_API_KEY`: used to generate the report/email body.
-- `OPENAI_MODEL`: optional; defaults to `gpt-5.4`.
+- `OPENAI_MODEL`: optional; defaults to `gpt-5.4-mini`.
 - `GMAIL_CLIENT_ID`: Google OAuth client id.
 - `GMAIL_CLIENT_SECRET`: Google OAuth client secret.
-- `GMAIL_REFRESH_TOKEN`: refresh token for the Gmail account that sends the emails.
+- `GMAIL_REFRESH_TOKEN`: refresh token for the Gmail account that sends emails and creates drafts.
 - `GMAIL_FROM`: optional; defaults to `dan.fuzecoteer@gmail.com`.
 - `SUPABASE_URL`: Supabase project URL.
 - `SUPABASE_SERVICE_ROLE_KEY`: service role key used by GitHub Actions only. Never expose this in browser code.
 
 For Vercel endpoint testing only, also set `CRON_SECRET`.
+
+Gmail OAuth scope set for the outreach agents:
+
+```text
+https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly
+```
+
+`gmail.send` sends status emails, `gmail.compose` creates draft outreach emails, and `gmail.readonly` lets the outreach agents learn from Daniel's previously sent emails. Without `gmail.readonly`, draft creation still works, but style learning from sent emails is skipped.
 
 ## Current Cloud Jobs
 
@@ -57,7 +65,7 @@ The Daily Eco email adds internal FE context from Supabase before generation:
 - one or two actual Perhentian project data highlights from embedded FE data sheets, not a long data dump
 - current `volunteers` as Volunteers at site
 - volunteers starting in the next 14 days as Volunteers coming up
-- school/corporate groups currently with FE or arriving in the next 7 days
+- school/corporate groups currently with FE or arriving within 7 days
 - volunteer birth dates as Birthdays today only
 - anonymized `volunteer_feedback` summaries, rating themes, and low-rating watch points
 - recent vendor/supplier `organisations` as New vendors
