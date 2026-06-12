@@ -449,7 +449,19 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
   }
 
   if (agentId === "re-engager") {
-    const candidates = await reengagementCandidates({ olderThanDays: 30, newerThanDays: 180, maxResults: limit });
+    let candidates;
+    try {
+      candidates = await reengagementCandidates({ olderThanDays: 30, newerThanDays: 180, maxResults: limit });
+    } catch (error) {
+      return {
+        profile,
+        selectedLeads: [],
+        created: [],
+        skipped: [`Could not scan Gmail sent threads for re-engagement candidates: ${summarizeError(error)}`],
+        dryRun,
+      };
+    }
+
     if (!candidates.length) {
       return {
         profile,
