@@ -1,4 +1,4 @@
-const { createDraftEmail } = require("./gmail");
+const { createDraftEmail, recentSentEmailExamples } = require("./gmail");
 const { selectRows } = require("./supabase-admin");
 
 function requireEnv(name) {
@@ -17,6 +17,7 @@ const AGENT_PROFILES = {
     countries: ["Malaysia", "Singapore", "Thailand", "Hong Kong", "Korea", "China", "Indonesia", "Japan"],
     offer: "Fuze Ecoteer school camps, student expeditions, service-learning trips and conservation education in Malaysia",
     audienceNote: "Focus first on Malaysia, Singapore, Thailand, Hong Kong, Korea and China. Include suitable global education leads when the fit is strong.",
+    sentSearchTerms: ["school camp", "school camps", "expedition", "service learning", "student", "university", "outdoor education"],
   },
   "corporate-outreach-finder": {
     name: "Corporate Outreach Finder",
@@ -26,14 +27,18 @@ const AGENT_PROFILES = {
     locations: ["Kuala Lumpur", "KL", "Selangor", "Kelantan", "Terengganu", "Pahang"],
     offer: "Fuze Ecoteer corporate team building with a cause, ESG volunteering, CSR impact days and conservation-led employee engagement",
     audienceNote: "Focus on Kuala Lumpur and Selangor first, then Kelantan, Terengganu and Pahang.",
+    sentSearchTerms: ["CSR", "ESG", "corporate", "team building", "employee engagement", "sustainability"],
   },
   "travel-outreach-finder": {
     name: "Travel Outreach Finder",
-    segments: ["Network / Referral Partner", "School", "University"],
-    focus: "travel agents, travel websites, career services, gap-year partners, influencers and collaboration partners",
+    segments: ["Network / Referral Partner"],
+    focus: "travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers and collaboration partners",
     countries: ["Malaysia", "Singapore", "Thailand", "Hong Kong", "Korea", "China", "Indonesia", "Japan"],
     offer: "Fuze Ecoteer Perhentian volunteer conservation projects: PTP turtle conservation, PMRS marine research and PEEP eco education",
-    audienceNote: "Look for partnership and referral angles that can promote PTP, PMRS and PEEP.",
+    audienceNote: "Do not use schools, universities, taska, tadika or day-care leads for this agent. Prioritize travel websites, travel agents, volunteer travel platforms, gap-year providers, responsible tourism publishers, travel media, career-break sites, influencers and referral/collaboration partners that can promote PTP, PMRS and PEEP.",
+    rejectTerms: ["school", "university", "college", "tadika", "taska", "preschool", "kindergarten", "day care", "daycare"],
+    requireTerms: ["travel", "tour", "tourism", "agent", "gap", "volunteer abroad", "career break", "influencer", "media", "blog", "website", "referral", "collaboration", "adventure", "expedition", "responsible tourism", "eco tourism", "ecotourism"],
+    sentSearchTerms: ["travel", "volunteer", "Perhentian", "PTP", "PMRS", "PEEP", "collaboration", "partner"],
   },
 };
 
@@ -65,6 +70,38 @@ function segmentMatches(profile, segment) {
   });
 }
 
+function isRejectedLead(profile, lead) {
+  if (!profile.rejectTerms || !profile.rejectTerms.length) return false;
+  const haystack = [
+    lead.lead_segment,
+    lead.organisation_name,
+    lead.contact_department,
+    lead.research_notes,
+    lead.likely_need,
+    lead.recommended_offer,
+    lead.personalization_angle,
+    lead.source,
+    lead.website,
+  ].join(" ").toLowerCase();
+  return profile.rejectTerms.some((term) => haystack.includes(String(term).toLowerCase()));
+}
+
+function satisfiesRequiredLeadTerms(profile, lead) {
+  if (!profile.requireTerms || !profile.requireTerms.length) return true;
+  const haystack = [
+    lead.lead_segment,
+    lead.organisation_name,
+    lead.contact_department,
+    lead.research_notes,
+    lead.likely_need,
+    lead.recommended_offer,
+    lead.personalization_angle,
+    lead.source,
+    lead.website,
+  ].join(" ").toLowerCase();
+  return profile.requireTerms.some((term) => haystack.includes(String(term).toLowerCase()));
+}
+
 function scoreLead(profile, lead) {
   let score = 0;
   const haystack = [
@@ -94,6 +131,8 @@ function pickLeads(profile, leads, limit) {
   const candidates = leads
     .filter((lead) => lead && cleanText(lead.organisation_name))
     .filter((lead) => isValidEmail(lead.email))
+    .filter((lead) => !isRejectedLead(profile, lead))
+    .filter((lead) => satisfiesRequiredLeadTerms(profile, lead))
     .map((lead) => ({ ...lead, _score: scoreLead(profile, lead) }))
     .filter((lead) => lead._score >= 25)
     .sort((a, b) => b._score - a._score || cleanText(a.organisation_name).localeCompare(cleanText(b.organisation_name)));
@@ -176,8 +215,8 @@ function fallbackDraftPlans({ profile, leads }) {
   }));
 }
 
-async function generateDraftPlans({ profile, leads, researchRows, runDate, limit }) {
-  const model = process.env.OPENAI_MODEL || "gpt-5.4";
+async function generateDraftPlans({ profile, leads, researchRows, sentExamples, runDate, limit }) {
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -193,6 +232,7 @@ async function generateDraftPlans({ profile, leads, researchRows, runDate, limit
             "You write concise, practical B2B outreach email drafts for Fuze Ecoteer.",
             "Use only the provided CRM and market-research data. Do not invent private facts, recent events, personal names, job titles, or relationships.",
             "Each draft must be safe to review before sending: respectful, specific, not pushy, and with one clear reply CTA.",
+            "When sent email examples are provided, learn Daniel's tone, structure, phrasing, CTA style and level of specificity from those examples. Do not copy whole paragraphs verbatim.",
             "Return only valid JSON.",
           ].join(" "),
         },
@@ -215,6 +255,9 @@ async function generateDraftPlans({ profile, leads, researchRows, runDate, limit
             "",
             "Market research context:",
             JSON.stringify(researchRows.slice(0, 25), null, 2),
+            "",
+            "Recent sent-email examples from Daniel to learn style and improve these drafts:",
+            JSON.stringify(sentExamples.slice(0, 6), null, 2),
           ].join("\n"),
         },
       ],
@@ -299,11 +342,26 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
 
   const skipped = [];
   let plans;
+  let sentExamples = [];
+  try {
+    sentExamples = await recentSentEmailExamples({
+      queryTerms: profile.sentSearchTerms,
+      days: 180,
+      maxResults: 6,
+    });
+    if (!sentExamples.length) {
+      skipped.push("No recent sent-email examples were found for this agent, so drafts used CRM and research context only.");
+    }
+  } catch (error) {
+    skipped.push(`Could not load recent sent-email examples: ${error.message}`);
+  }
+
   try {
     plans = await generateDraftPlans({
       profile,
       leads: selectedLeads,
       researchRows,
+      sentExamples,
       runDate,
       limit: selectedLeads.length,
     });
