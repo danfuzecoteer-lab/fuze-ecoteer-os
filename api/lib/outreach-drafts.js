@@ -101,6 +101,81 @@ function pickLeads(profile, leads, limit) {
   return candidates.slice(0, limit);
 }
 
+function isOpenAiQuotaError(error) {
+  return /insufficient_quota|exceeded your current quota|billing details/i.test(cleanText(error && error.message));
+}
+
+function truncateText(value, maxLength = 260) {
+  const text = cleanText(value).replace(/\s+/g, " ");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3).trim()}...`;
+}
+
+function fallbackSubject(profile, lead) {
+  if (profile.name === "Education Outreach Finder") {
+    return `School camp and expedition ideas for ${lead.organisation_name}`;
+  }
+  if (profile.name === "Corporate Outreach Finder") {
+    return `CSR team building idea for ${lead.organisation_name}`;
+  }
+  return `Collaboration idea for ${lead.organisation_name}`;
+}
+
+function fallbackOpening(profile, lead) {
+  const location = [lead.city, lead.country].map(cleanText).filter(Boolean).join(", ");
+  const segment = cleanText(lead.lead_segment).toLowerCase();
+  const context = truncateText(lead.personalization_angle || lead.research_notes || lead.likely_need || lead.recommended_offer, 240);
+  const placeText = location ? ` in ${location}` : "";
+
+  if (profile.name === "Education Outreach Finder") {
+    return `I am reaching out because ${lead.organisation_name}${placeText} looks like a relevant fit for experiential education, school groups or student development. ${context || "Your organisation appears to serve learners who could benefit from structured outdoor, conservation and service-learning experiences."}`;
+  }
+
+  if (profile.name === "Corporate Outreach Finder") {
+    return `I am reaching out because ${lead.organisation_name}${placeText} looks like a relevant fit for CSR, ESG or employee engagement work. ${context || "Your organisation appears to have teams who may value practical sustainability activities with a clear community and conservation angle."}`;
+  }
+
+  if (segment.includes("school") || segment.includes("university")) {
+    return `I am reaching out because ${lead.organisation_name}${placeText} may be a good fit for student volunteering, conservation learning or referral partnerships. ${context || "Your audience seems aligned with structured, meaningful experiences in Malaysia."}`;
+  }
+
+  return `I am reaching out because ${lead.organisation_name}${placeText} looks like a possible collaboration partner for conservation travel, volunteer placements or responsible tourism. ${context || "Your audience may be interested in credible nature-based projects with a practical impact story."}`;
+}
+
+function fallbackOffer(profile) {
+  if (profile.name === "Education Outreach Finder") {
+    return "Fuze Ecoteer runs school camps, student expeditions and conservation education programmes connected to real field projects in Malaysia, including marine research, turtle conservation and eco education. We can shape the experience around learning outcomes, safety, logistics and group objectives.";
+  }
+
+  if (profile.name === "Corporate Outreach Finder") {
+    return "Fuze Ecoteer runs corporate team building with a cause, CSR impact days and conservation-led employee engagement programmes. The aim is to give teams a useful shared experience while supporting practical environmental and community outcomes.";
+  }
+
+  return "Fuze Ecoteer runs three Perhentian conservation volunteer projects: PTP for turtle conservation, PMRS for marine research and PEEP for eco education. We are looking for thoughtful partners who can help suitable travellers, students or career explorers find these projects.";
+}
+
+function fallbackDraftPlans({ profile, leads }) {
+  return leads.map((lead) => ({
+    to: cleanText(lead.email),
+    subject: fallbackSubject(profile, lead),
+    body: [
+      "Hi,",
+      "",
+      fallbackOpening(profile, lead),
+      "",
+      fallbackOffer(profile),
+      "",
+      "Would it be useful if I sent over a short outline of the programme options and how they could work for your audience or team?",
+      "",
+      "Best,",
+      "Daniel",
+      "Fuze Ecoteer",
+    ].join("\n"),
+    lead_name: cleanText(lead.organisation_name),
+    personalization_basis: truncateText(lead.personalization_angle || lead.research_notes || lead.likely_need || "CRM segment and location match", 180),
+  }));
+}
+
 async function generateDraftPlans({ profile, leads, researchRows, runDate, limit }) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4";
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -222,16 +297,25 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
     };
   }
 
-  const plans = await generateDraftPlans({
-    profile,
-    leads: selectedLeads,
-    researchRows,
-    runDate,
-    limit: selectedLeads.length,
-  });
+  const skipped = [];
+  let plans;
+  try {
+    plans = await generateDraftPlans({
+      profile,
+      leads: selectedLeads,
+      researchRows,
+      runDate,
+      limit: selectedLeads.length,
+    });
+  } catch (error) {
+    if (!isOpenAiQuotaError(error)) {
+      throw error;
+    }
+    plans = fallbackDraftPlans({ profile, leads: selectedLeads });
+    skipped.push("OpenAI quota was exhausted, so CRM-based template drafts were created instead of AI-generated drafts.");
+  }
 
   const created = [];
-  const skipped = [];
   for (const plan of plans.slice(0, limit)) {
     const to = cleanText(plan.to);
     const matchingLead = selectedLeads.find((lead) => cleanText(lead.email).toLowerCase() === to.toLowerCase());
