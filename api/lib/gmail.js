@@ -90,17 +90,101 @@ async function createDraftEmail({ to, subject, body }) {
   return response.json();
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function stripMarkdown(value) {
+  return String(value || "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "- ")
+    .trim();
+}
+
+function inlineMarkdownToHtml(value) {
+  return escapeHtml(value).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function linesToHtml(lines) {
+  const html = [];
+  let inList = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (inList) {
+        html.push("</ul>");
+        inList = false;
+      }
+      continue;
+    }
+
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${inlineMarkdownToHtml(bullet[1])}</li>`);
+      continue;
+    }
+
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+
+    const heading = line.match(/^\*\*([^*]+)\*\*:?$/);
+    if (heading) {
+      html.push(`<h3>${escapeHtml(heading[1])}</h3>`);
+    } else {
+      html.push(`<p>${inlineMarkdownToHtml(line)}</p>`);
+    }
+  }
+
+  if (inList) html.push("</ul>");
+  return html.join("\n");
+}
+
+function bodyToHtml(body) {
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<body style=\"font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.45; color: #202124;\">",
+    linesToHtml(String(body || "").split(/\r?\n/)),
+    "</body>",
+    "</html>",
+  ].join("\n");
+}
+
 function buildRawEmail({ to, subject, body }) {
   const from = process.env.GMAIL_FROM || "dan.fuzecoteer@gmail.com";
   const recipients = Array.isArray(to) ? to : [to].filter(Boolean);
+  const boundary = `fe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const plainBody = stripMarkdown(body);
+  const htmlBody = bodyToHtml(body);
   return [
     `From: ${from}`,
     recipients.length ? `To: ${recipients.join(", ")}` : "To:",
     `Subject: ${subject}`,
     "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",
     "",
-    body,
+    plainBody,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "",
+    htmlBody,
+    "",
+    `--${boundary}--`,
   ].join("\r\n");
 }
 
