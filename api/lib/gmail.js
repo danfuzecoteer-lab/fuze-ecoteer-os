@@ -240,6 +240,7 @@ async function getMessage(id) {
     snippet: message.snippet || "",
     subject: headerValue(headers, "Subject"),
     from: headerValue(headers, "From"),
+    to: headerValue(headers, "To"),
     date: headerValue(headers, "Date"),
     body: stripQuotedReply(extractTextPayload(message.payload)),
   };
@@ -273,6 +274,43 @@ async function recentAutomationNotes({ subjectPrefix, days = 45, maxResults = 8 
     }));
 }
 
+function cleanSentExampleText(text) {
+  return stripQuotedReply(String(text || ""))
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 1800);
+}
+
+async function recentSentEmailExamples({ queryTerms = [], days = 120, maxResults = 6 } = {}) {
+  const terms = queryTerms
+    .map((term) => String(term || "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+  const query = [
+    "in:sent",
+    `newer_than:${days}d`,
+    terms.length ? `(${terms.join(" OR ")})` : "",
+    "-subject:\"Automation Completed\"",
+    "-subject:\"Automation Failed\"",
+  ].filter(Boolean).join(" ");
+  const messages = await searchMessages({ query, maxResults: maxResults * 2 });
+  const fetched = await Promise.all(messages.map((message) => getMessage(message.id)));
+
+  return fetched
+    .map((message) => ({
+      subject: message.subject,
+      to: message.to,
+      date: message.date,
+      text: cleanSentExampleText(message.body || message.snippet || ""),
+    }))
+    .filter((message) => message.text)
+    .slice(0, maxResults);
+}
+
 async function buildAutomationNoteContext(automation) {
   const notes = await recentAutomationNotes({ subjectPrefix: automation.subjectPrefix });
   if (!notes.length) return "";
@@ -299,6 +337,7 @@ async function buildAutomationNoteContext(automation) {
 module.exports = {
   buildAutomationNoteContext,
   createDraftEmail,
+  recentSentEmailExamples,
   recentAutomationNotes,
   sendEmail,
 };
