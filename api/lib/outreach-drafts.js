@@ -1,4 +1,4 @@
-const { createDraftEmail, recentSentEmailExamples } = require("./gmail");
+const { createDraftEmail, recentSentEmailExamples, reengagementCandidates } = require("./gmail");
 const { selectRows, updateRows } = require("./supabase-admin");
 
 function requireEnv(name) {
@@ -39,6 +39,13 @@ const AGENT_PROFILES = {
     rejectTerms: ["school", "university", "college", "tadika", "taska", "preschool", "kindergarten", "day care", "daycare"],
     requireTerms: ["travel", "tour", "tourism", "agent", "gap", "volunteer abroad", "career break", "influencer", "media", "blog", "publisher", "magazine", "referral partner", "adventure", "expedition", "responsible tourism", "eco tourism", "ecotourism"],
     sentSearchTerms: ["travel", "volunteer", "Perhentian", "PTP", "PMRS", "PEEP", "collaboration", "partner"],
+  },
+  "re-engager": {
+    name: "Re-engager",
+    focus: "people Daniel has emailed who have not replied in the last month",
+    offer: "a light reconnection email that follows the existing conversation and invites a simple reply",
+    audienceNote: "Review the previous thread context. Do not pressure them, do not pretend there was a reply, and do not invent new facts.",
+    sentSearchTerms: ["school", "CSR", "travel", "volunteer", "camp", "expedition", "collaboration", "Perhentian"],
   },
 };
 
@@ -303,6 +310,85 @@ async function generateDraftPlans({ profile, leads, researchRows, sentExamples, 
   return parsed;
 }
 
+async function generateReengagementDraftPlans({ profile, candidates, runDate, limit }) {
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "system",
+          content: [
+            "You write short reconnection email drafts for Daniel at Fuze Ecoteer.",
+            "Use only the supplied Gmail thread summaries. Do not invent replies, commitments, names, dates, or private facts.",
+            "The recipient has not replied for at least one month. Be warm, light, practical and low-pressure.",
+            "Each draft must be safe for Daniel to review before sending and must have one simple reply CTA.",
+            "Return only valid JSON.",
+          ].join(" "),
+        },
+        {
+          role: "user",
+          content: [
+            `Run date in Kuala Lumpur: ${runDate}.`,
+            `Task: write up to ${limit} reconnection email drafts.`,
+            "Each body should be 80-150 words. Reference the earlier email topic only when the thread summary supports it.",
+            "Use this signature exactly: Best,\\nDaniel\\nFuze Ecoteer",
+            "Return a JSON array with exactly these keys per item: to, subject, body, lead_name, personalization_basis.",
+            "Use only the email address from the candidate.to field for to.",
+            "",
+            "Candidates:",
+            JSON.stringify(candidates, null, 2),
+          ].join("\n"),
+        },
+      ],
+      max_output_tokens: 7000,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI re-engagement draft generation failed: ${await response.text()}`);
+  }
+
+  const data = await response.json();
+  const text = data.output_text || (data.output || [])
+    .flatMap((item) => item.content || [])
+    .filter((content) => content.type === "output_text")
+    .map((content) => content.text)
+    .join("\n");
+
+  const jsonText = extractJson(text, "re-engagement draft");
+  const parsed = JSON.parse(jsonText);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Re-engagement draft response was not a JSON array");
+  }
+  return parsed;
+}
+
+function fallbackReengagementDraftPlans({ candidates }) {
+  return candidates.map((candidate) => ({
+    to: candidate.to,
+    subject: candidate.subject && /^re:/i.test(candidate.subject) ? candidate.subject : `Re: ${candidate.subject || "Following up"}`,
+    body: [
+      "Hi,",
+      "",
+      "I wanted to gently follow up on my earlier email in case it got buried.",
+      "",
+      "No pressure at all, but if this is still relevant, would it be useful for me to send over a short outline or a couple of options to make it easier to review?",
+      "",
+      "Best,",
+      "Daniel",
+      "Fuze Ecoteer",
+    ].join("\n"),
+    lead_name: candidate.to,
+    personalization_basis: "Previous sent email with no reply in the last month",
+  }));
+}
+
 function extractJson(text, label) {
   const trimmed = cleanText(text);
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) return trimmed;
@@ -360,6 +446,80 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
   const profile = AGENT_PROFILES[agentId];
   if (!profile) {
     throw new Error(`Unknown outreach draft agent: ${agentId}`);
+  }
+
+  if (agentId === "re-engager") {
+    const candidates = await reengagementCandidates({ olderThanDays: 30, newerThanDays: 180, maxResults: limit });
+    if (!candidates.length) {
+      return {
+        profile,
+        selectedLeads: [],
+        created: [],
+        skipped: ["No sent Gmail threads matched the re-engagement rule: last message from Daniel, older than one month, with no later reply."],
+        dryRun,
+      };
+    }
+
+    if (dryRun) {
+      return {
+        profile,
+        selectedLeads: candidates,
+        created: [],
+        skipped: [],
+        dryRun,
+      };
+    }
+
+    const skipped = [];
+    let plans;
+    try {
+      plans = await generateReengagementDraftPlans({ profile, candidates, runDate, limit: candidates.length });
+    } catch (error) {
+      if (!isOpenAiQuotaError(error)) {
+        throw error;
+      }
+      plans = fallbackReengagementDraftPlans({ candidates });
+      skipped.push("OpenAI quota was exhausted, so simple template re-engagement drafts were created instead of AI-generated drafts.");
+    }
+
+    const created = [];
+    for (const plan of plans.slice(0, limit)) {
+      const to = cleanText(plan.to);
+      const matchingCandidate = candidates.find((candidate) => candidate.to.toLowerCase() === to.toLowerCase());
+      if (!isValidEmail(to) || !matchingCandidate) {
+        skipped.push(`Skipped ${cleanText(plan.lead_name) || "unknown recipient"} because the generated recipient did not match a selected Gmail candidate.`);
+        continue;
+      }
+
+      try {
+        const draft = await createDraftEmail({
+          to: [to],
+          subject: cleanText(plan.subject).slice(0, 180) || `Re: ${matchingCandidate.subject || "Following up"}`,
+          body: cleanText(plan.body),
+        });
+        created.push({
+          draftId: draft.id,
+          messageId: draft.message && draft.message.id,
+          to,
+          leadName: cleanText(plan.lead_name) || to,
+          personalizationBasis: cleanText(plan.personalization_basis) || "No reply in the last month",
+        });
+      } catch (error) {
+        skipped.push(`Could not create re-engagement draft for <${to}>: ${summarizeError(error)}`);
+      }
+    }
+
+    if (!created.length && plans.length) {
+      throw new Error(`No Gmail re-engagement drafts were created. ${skipped.slice(-3).join(" ")}`);
+    }
+
+    return {
+      profile,
+      selectedLeads: candidates,
+      created,
+      skipped,
+      dryRun,
+    };
   }
 
   const { leads, researchRows } = await loadOutreachContext();
