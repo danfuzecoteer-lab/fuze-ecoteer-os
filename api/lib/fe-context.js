@@ -71,6 +71,62 @@ async function safeSelectRows(table, params = []) {
   }
 }
 
+function decodeXml(value) {
+  return text(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function firstXmlTag(block, tag) {
+  const match = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? decodeXml(match[1].replace(/^<!\[CDATA\[|\]\]>$/g, "")) : "";
+}
+
+async function marineEcoNewsContext() {
+  const query = encodeURIComponent("(marine conservation OR coral reef OR sea turtle OR seagrass OR plastic pollution) (Malaysia OR Southeast Asia OR ASEAN) when:14d");
+  const url = `https://news.google.com/rss/search?q=${query}&hl=en-MY&gl=MY&ceid=MY:en`;
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Fuze-Ecoteer-Cloud-Automation" },
+    });
+    if (!response.ok) throw new Error(`news fetch failed: ${response.status}`);
+    const xml = await response.text();
+    const itemMatch = xml.match(/<item>([\s\S]*?)<\/item>/i);
+    if (!itemMatch) throw new Error("no current news item found");
+    const item = itemMatch[1];
+    const title = firstXmlTag(item, "title");
+    const link = firstXmlTag(item, "link");
+    const source = firstXmlTag(item, "source");
+    const published = firstXmlTag(item, "pubDate");
+    return [
+      "Global eco news source to use:",
+      `- Title: ${title || "Marine conservation news search"}`,
+      source ? `- Source: ${source}` : "",
+      published ? `- Published: ${published}` : "",
+      `- Read more link: ${link || url}`,
+      "- Use this as the Global eco news item if relevant. Include the Read more link in the email.",
+    ].filter(Boolean).join("\n");
+  } catch (error) {
+    return [
+      "Global eco news source to use:",
+      "- No specific live article could be loaded.",
+      `- Read more link: ${url}`,
+      "- Use this search link only if no better current source is available.",
+    ].join("\n");
+  }
+}
+
+function safeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 function formatImpactEntry(entry) {
   const parts = [
     field(entry, ["entry_date", "date", "created_at"]) ? parseFlexibleDate(field(entry, ["entry_date", "date", "created_at"])) : "",
@@ -90,14 +146,6 @@ function formatImpactEntry(entry) {
     : "";
 
   return `- ${parts.join(" | ")}${summary ? `: ${summary}` : ""}${metrics ? ` (${metrics})` : ""}`;
-}
-
-function safeJson(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
 }
 
 function formatPriorityImpactEntry(entry) {
@@ -356,7 +404,7 @@ async function buildDailyEcoFeContext(runDate) {
   const thirtyDaysAgo = addDays(runDate, -30);
   const oneWeekAhead = addDays(runDate, 7);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [impactEntries, impactStories, perhentianHighlights, allVolunteerRows, volunteerFeedback, newVendors] = await Promise.all([
+  const [impactEntries, impactStories, perhentianHighlights, ecoNews, allVolunteerRows, volunteerFeedback, newVendors] = await Promise.all([
     safeSelectRows("impact_entries", [
       ["select", "*"],
       ["order", "entry_date.desc"],
@@ -368,6 +416,7 @@ async function buildDailyEcoFeContext(runDate) {
       ["limit", "8"],
     ]),
     perhentianDataHighlights(runDate),
+    marineEcoNewsContext(),
     safeSelectRows("volunteers", [
       ["select", "*"],
       ["limit", "500"],
@@ -409,6 +458,8 @@ async function buildDailyEcoFeContext(runDate) {
   return [
     "FE internal context for the Fuze Ecoteer updates section only.",
     "Use the following as practical update material. Do not include private contact details, passport details, emergency contact details, medical/diet details, exact birth years, ages, payment details, balances, or verbatim feedback that could identify someone.",
+    "",
+    ecoNews,
     "",
     "Priority Project/Fun Impact update:",
     formatPriorityImpactEntry(priorityProjectUpdate),
