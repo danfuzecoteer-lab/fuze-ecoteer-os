@@ -7,6 +7,7 @@ on:
     paths:
       - "automation-briefs/competitor-analysis.md"
       - "automation-briefs/cold-email-crm.md"
+      - "automation-briefs/daily-eco-test.md"
       - "automation-briefs/outreach-draft-agents.md"
       - "api/lib/outreach-drafts.js"
       - "api/lib/gmail.js"
@@ -90,19 +91,27 @@ jobs:
             echo "test_to=${{ inputs.test_to }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "push" ]; then
             changed="$(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}")"
-            if echo "$changed" | grep -q '^automation-briefs/cold-email-crm\.md$'; then
+            if echo "$changed" | grep -q '^automation-briefs/daily-eco-test\.md$'; then
+              echo "group=daily-7am" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "only_id=daily-eco-fun-facts" >> "$GITHUB_OUTPUT"
+              echo "test_to=dan.fuzecoteer@gmail.com" >> "$GITHUB_OUTPUT"
+            elif echo "$changed" | grep -q '^automation-briefs/cold-email-crm\.md$'; then
               echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
+              echo "dry_run=true" >> "$GITHUB_OUTPUT"
             elif echo "$changed" | grep -q '^automation-briefs/competitor-analysis\.md$'; then
               echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
+              echo "dry_run=true" >> "$GITHUB_OUTPUT"
             elif echo "$changed" | grep -q '^automation-briefs/outreach-draft-agents\.md$'; then
               echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
+              echo "dry_run=true" >> "$GITHUB_OUTPUT"
             elif echo "$changed" | grep -Eq '^(api/lib/outreach-drafts\.js|api/lib/gmail\.js|api/lib/cloud-automations\.js|scripts/run-cloud-automations\.js)$'; then
               echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
+              echo "dry_run=true" >> "$GITHUB_OUTPUT"
             else
               echo "Push event did not change a runnable automation brief; use workflow_dispatch or the schedule instead." >&2
               exit 1
             fi
-            echo "dry_run=true" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
             echo "group=daily-7am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
