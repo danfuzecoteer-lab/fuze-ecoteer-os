@@ -11,16 +11,78 @@ function text(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function normaliseKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function field(row, aliases) {
+  const names = Array.isArray(aliases) ? aliases : [aliases];
+  if (!row) return "";
+  if (!row.__lookup) {
+    Object.defineProperty(row, "__lookup", {
+      value: Object.keys(row).reduce((lookup, key) => {
+        lookup[normaliseKey(key)] = key;
+        return lookup;
+      }, {}),
+      enumerable: false,
+    });
+  }
+
+  for (const alias of names) {
+    const key = row.__lookup[normaliseKey(alias)];
+    if (key !== undefined) return row[key] || "";
+  }
+  return "";
+}
+
+function expandYear(year) {
+  const numeric = Number(year);
+  if (!Number.isFinite(numeric)) return 2026;
+  if (numeric < 100) return numeric >= 50 ? 1900 + numeric : 2000 + numeric;
+  return numeric;
+}
+
+function monthIndex(month) {
+  return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(String(month || "").toLowerCase().slice(0, 3));
+}
+
+function parseFlexibleDate(value, defaultYear = "2026") {
+  const raw = text(value);
+  if (!raw || raw.toLowerCase() === "null") return "";
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) return `${expandYear(slash[3])}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}`;
+  const dashMonth = raw.match(/^(\d{1,2})-([A-Za-z]{3,9})(?:-(\d{2,4}))?$/);
+  if (dashMonth) {
+    const month = monthIndex(dashMonth[2]) + 1;
+    if (month > 0) return `${expandYear(dashMonth[3] || defaultYear)}-${String(month).padStart(2, "0")}-${dashMonth[1].padStart(2, "0")}`;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+async function safeSelectRows(table, params = []) {
+  try {
+    return await selectRows(table, params);
+  } catch (error) {
+    console.warn(`Could not load ${table}: ${error.message}`);
+    return [];
+  }
+}
+
 function formatImpactEntry(entry) {
   const parts = [
-    entry.entry_date,
-    entry.project,
-    entry.activity_type,
-    entry.location ? `at ${entry.location}` : "",
+    field(entry, ["entry_date", "date", "created_at"]) ? parseFlexibleDate(field(entry, ["entry_date", "date", "created_at"])) : "",
+    field(entry, ["project", "Project"]),
+    field(entry, ["activity_type", "activityType", "content_use"]),
+    field(entry, ["location", "site_name", "site"]) ? `at ${field(entry, ["location", "site_name", "site"])}` : "",
   ].filter(Boolean);
-  const summary = text(entry.impact_message || entry.story_highlight || entry.notes || entry.follow_up_needed);
-  const metrics = entry.metrics_json && typeof entry.metrics_json === "object"
-    ? Object.entries(entry.metrics_json)
+  const summary = text(field(entry, ["headline"]) || field(entry, ["story"]) || field(entry, ["impact_message"]) || field(entry, ["story_highlight"]) || field(entry, ["funny_story"]) || field(entry, ["notes"]) || field(entry, ["follow_up_needed"]));
+  const rawMetrics = field(entry, ["metrics_json", "metrics"]);
+  const parsedMetrics = rawMetrics && typeof rawMetrics === "string" ? safeJson(rawMetrics) : rawMetrics;
+  const metrics = parsedMetrics && typeof parsedMetrics === "object"
+    ? Object.entries(parsedMetrics)
       .filter(([, value]) => value !== undefined && value !== null && value !== "")
       .slice(0, 4)
       .map(([key, value]) => `${key}: ${value}`)
@@ -30,19 +92,34 @@ function formatImpactEntry(entry) {
   return `- ${parts.join(" | ")}${summary ? `: ${summary}` : ""}${metrics ? ` (${metrics})` : ""}`;
 }
 
+function safeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function formatPriorityImpactEntry(entry) {
+  if (!entry) return "- None found.";
+  return formatImpactEntry(entry).replace(/^- /, "- Newest impact update to prioritize: ");
+}
+
 function groupVolunteerRows(rows) {
   const groups = new Map();
   for (const row of rows) {
-    const key = `${row.project || "Unknown"} | ${row.start_date || "unknown start"}`;
+    const project = field(row, ["project", "Project"]) || "Unknown";
+    const startDate = parseFlexibleDate(field(row, ["start_date", "Vol_Start", "start"]));
+    const key = `${project} | ${startDate || "unknown start"}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   }
   return [...groups.entries()].map(([key, groupRows]) => {
     const [project, startDate] = key.split(" | ");
-    const names = groupRows.map((row) => text(row.volunteer_name)).filter(Boolean).slice(0, 8);
+    const names = groupRows.map((row) => text(field(row, ["volunteer_name", "vol_name", "name"]))).filter(Boolean).slice(0, 8);
     const extra = groupRows.length > names.length ? ` and ${groupRows.length - names.length} more` : "";
-    const endDates = [...new Set(groupRows.map((row) => row.end_date).filter(Boolean))];
-    const agents = [...new Set(groupRows.map((row) => text(row.agent)).filter(Boolean))].slice(0, 3);
+    const endDates = [...new Set(groupRows.map((row) => parseFlexibleDate(field(row, ["end_date", "Vol_End", "end"]))).filter(Boolean))];
+    const agents = [...new Set(groupRows.map((row) => text(field(row, ["agent", "Vol_agent"]))).filter(Boolean))].slice(0, 3);
     return `- ${project} from ${startDate}${endDates.length === 1 ? ` to ${endDates[0]}` : ""}: ${names.join(", ")}${extra}${agents.length ? ` (${agents.join(", ")})` : ""}`;
   });
 }
@@ -60,7 +137,7 @@ function formatVendor(row) {
 }
 
 function parseBirthdayParts(row) {
-  const candidates = [row.date_of_birth, row.age].map(text).filter(Boolean);
+  const candidates = [field(row, ["date_of_birth", "dob"]), field(row, ["age"])].map(text).filter(Boolean);
   for (const candidate of candidates) {
     const iso = candidate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (iso) return { month: iso[2], day: iso[3] };
@@ -95,8 +172,10 @@ function daysUntilBirthday(runDate, birthdayMonthDay) {
 }
 
 function isDateInStay(isoDate, row) {
-  if (!row.start_date || !row.end_date) return true;
-  return row.start_date <= isoDate && isoDate <= row.end_date;
+  const startDate = parseFlexibleDate(field(row, ["start_date", "Vol_Start", "start"]));
+  const endDate = parseFlexibleDate(field(row, ["end_date", "Vol_End", "end"]));
+  if (!startDate || !endDate) return true;
+  return startDate <= isoDate && isoDate <= endDate;
 }
 
 function birthdayRows(rows, runDate) {
@@ -120,25 +199,24 @@ function birthdayRows(rows, runDate) {
 }
 
 function formatBirthday(rowInfo) {
-  const name = text(rowInfo.row.volunteer_name);
-  const project = text(rowInfo.row.project);
-  const timing = rowInfo.daysAhead === 0 ? "today" : `in ${rowInfo.daysAhead} day${rowInfo.daysAhead === 1 ? "" : "s"}`;
-  return `- ${name}${project ? ` (${project})` : ""}: birthday ${timing}`;
+  const name = text(field(rowInfo.row, ["volunteer_name", "vol_name", "name"]));
+  const project = text(field(rowInfo.row, ["project", "Project"]));
+  return `- ${name}${project ? ` (${project})` : ""}`;
 }
 
 function detectGroupType(row) {
-  const haystack = [row.agent, row.notes, row.volunteer_name, row.project].map(text).join(" ");
+  const haystack = [field(row, ["agent", "Vol_agent"]), field(row, ["notes"]), field(row, ["volunteer_name", "vol_name", "name"]), field(row, ["project", "Project"])].map(text).join(" ");
   if (/\b(school|college|university|student|students|tadika|taska|teacher|teachers|class|camp)\b/i.test(haystack)) return "school";
   if (/\b(corporate|company|csr|esg|team building|teambuilding|staff|employee|employees|hr)\b/i.test(haystack)) return "corporate";
   return "";
 }
 
 function groupName(row) {
-  const agent = text(row.agent);
+  const agent = text(field(row, ["agent", "Vol_agent"]));
   if (agent && !/^(direct|wetravel|we travel|volunteer world|malaysian wildlife|mw|gvi|the great project)$/i.test(agent)) {
     return agent;
   }
-  const notes = text(row.notes);
+  const notes = text(field(row, ["notes"]));
   const namedMatch = notes.match(/\b(?:school|university|college|company|corporate|csr|group)\b[: -]+([^.;,]+)/i);
   if (namedMatch) return text(namedMatch[1]);
   return detectGroupType(row) === "school" ? "School group" : "Corporate group";
@@ -150,18 +228,19 @@ function schoolCorporateGroups(rows, runDate, daysAhead) {
   for (const row of rows) {
     const type = detectGroupType(row);
     if (!type) continue;
-    const startDate = row.start_date || runDate;
-    const endDate = row.end_date || startDate;
+    const startDate = parseFlexibleDate(field(row, ["start_date", "Vol_Start", "start"])) || runDate;
+    const endDate = parseFlexibleDate(field(row, ["end_date", "Vol_End", "end"])) || startDate;
     const overlapsNow = startDate <= runDate && endDate >= runDate;
     const arrivesSoon = startDate > runDate && startDate <= windowEnd;
     if (!overlapsNow && !arrivesSoon) continue;
 
-    const key = [type, groupName(row), row.project || "Unknown", startDate, endDate].join("|");
+    const project = field(row, ["project", "Project"]) || "Unknown";
+    const key = [type, groupName(row), project, startDate, endDate].join("|");
     if (!groups.has(key)) {
       groups.set(key, {
         type,
         name: groupName(row),
-        project: row.project || "Unknown",
+        project,
         startDate,
         endDate,
         status: overlapsNow ? "with us now" : "arriving soon",
@@ -277,46 +356,29 @@ async function buildDailyEcoFeContext(runDate) {
   const thirtyDaysAgo = addDays(runDate, -30);
   const oneWeekAhead = addDays(runDate, 7);
   const twoWeeksAhead = addDays(runDate, 14);
-  const [projectUpdates, perhentianHighlights, volunteersAtSite, volunteersComingUp, groupSource, birthdaySource, volunteerFeedback, newVendors] = await Promise.all([
-    selectRows("impact_entries", [
-      ["select", "project,activity_type,entry_date,leader,location,metrics_json,story_highlight,impact_message,follow_up_needed,notes"],
+  const [impactEntries, impactStories, perhentianHighlights, allVolunteerRows, volunteerFeedback, newVendors] = await Promise.all([
+    safeSelectRows("impact_entries", [
+      ["select", "*"],
       ["order", "entry_date.desc"],
       ["limit", "8"],
     ]),
+    safeSelectRows("impact_stories", [
+      ["select", "*"],
+      ["order", "date.desc"],
+      ["limit", "8"],
+    ]),
     perhentianDataHighlights(runDate),
-    selectRows("volunteers", [
-      ["select", "project,volunteer_name,nationality,agent,start_date,end_date,dive_course,room_upgrade,notes"],
-      ["start_date", `lte.${runDate}`],
-      ["end_date", `gte.${runDate}`],
-      ["order", "project.asc,start_date.asc"],
-      ["limit", "40"],
-    ]),
-    selectRows("volunteers", [
-      ["select", "project,volunteer_name,nationality,agent,start_date,end_date,dive_course,room_upgrade,notes"],
-      ["start_date", `gt.${runDate}`],
-      ["start_date", `lte.${twoWeeksAhead}`],
-      ["order", "start_date.asc,project.asc"],
-      ["limit", "40"],
-    ]),
-    selectRows("volunteers", [
-      ["select", "project,volunteer_name,agent,start_date,end_date,notes"],
-      ["start_date", `lte.${oneWeekAhead}`],
-      ["end_date", `gte.${runDate}`],
-      ["order", "start_date.asc,project.asc"],
-      ["limit", "120"],
-    ]),
-    selectRows("volunteers", [
-      ["select", "project,volunteer_name,start_date,end_date,date_of_birth,age"],
-      ["order", "project.asc,volunteer_name.asc"],
+    safeSelectRows("volunteers", [
+      ["select", "*"],
       ["limit", "500"],
     ]),
-    selectRows("volunteer_feedback", [
+    safeSelectRows("volunteer_feedback", [
       ["select", "project,ratings_json,question_comments_json,comment,created_at"],
       ["created_at", `gte.${thirtyDaysAgo}`],
       ["order", "created_at.desc"],
       ["limit", "80"],
     ]),
-    selectRows("organisations", [
+    safeSelectRows("organisations", [
       ["select", "name,organisation_type,country,website,notes,created_at"],
       ["created_at", `gte.${twoWeeksAgo}`],
       ["or", "(organisation_type.ilike.*vendor*,organisation_type.ilike.*supplier*,name.ilike.*vendor*,name.ilike.*supplier*,notes.ilike.*vendor*,notes.ilike.*supplier*)"],
@@ -324,18 +386,38 @@ async function buildDailyEcoFeContext(runDate) {
       ["limit", "12"],
     ]),
   ]);
-  const schoolCorporateGroupRows = schoolCorporateGroups(groupSource, runDate, 7);
-  const birthdaysToday = birthdayRows(birthdaySource, runDate);
+  const projectUpdates = [...impactStories, ...impactEntries]
+    .sort((a, b) => {
+      const bDate = parseFlexibleDate(field(b, ["date", "entry_date", "created_at"])) || "";
+      const aDate = parseFlexibleDate(field(a, ["date", "entry_date", "created_at"])) || "";
+      return bDate.localeCompare(aDate);
+    })
+    .slice(0, 8);
+  const volunteersAtSite = allVolunteerRows.filter((row) => {
+    const startDate = parseFlexibleDate(field(row, ["start_date", "Vol_Start", "start"]));
+    const endDate = parseFlexibleDate(field(row, ["end_date", "Vol_End", "end"])) || startDate;
+    return startDate && startDate <= runDate && endDate >= runDate;
+  });
+  const volunteersComingUp = allVolunteerRows.filter((row) => {
+    const startDate = parseFlexibleDate(field(row, ["start_date", "Vol_Start", "start"]));
+    return startDate && startDate > runDate && startDate <= twoWeeksAhead;
+  });
+  const schoolCorporateGroupRows = schoolCorporateGroups(allVolunteerRows, runDate, 7);
+  const birthdaysToday = birthdayRows(allVolunteerRows, runDate);
+  const [priorityProjectUpdate, ...otherProjectUpdates] = projectUpdates;
 
   return [
     "FE internal context for the Fuze Ecoteer updates section only.",
     "Use the following as practical update material. Do not include private contact details, passport details, emergency contact details, medical/diet details, exact birth years, ages, payment details, balances, or verbatim feedback that could identify someone.",
     "",
-    "Project updates:",
-    ...(projectUpdates.length ? projectUpdates.map(formatImpactEntry) : ["- No recent project updates found in Supabase."]),
+    "Priority Project/Fun Impact update:",
+    formatPriorityImpactEntry(priorityProjectUpdate),
     "",
-    "Perhentian project data highlights from actual data sheets:",
-    ...perhentianHighlights,
+    "Other recent project updates, use only if useful:",
+    ...(otherProjectUpdates.length ? otherProjectUpdates.slice(0, 3).map(formatImpactEntry) : ["- None found."]),
+    "",
+    "Perhentian project data highlights from actual data sheets, choose at most two for the email:",
+    ...perhentianHighlights.slice(0, 2),
     "",
     `Volunteers at site on ${runDate}:`,
     ...(volunteersAtSite.length ? groupVolunteerRows(volunteersAtSite) : ["- No current volunteers found in Supabase for this date."]),
@@ -347,7 +429,7 @@ async function buildDailyEcoFeContext(runDate) {
     ...(schoolCorporateGroupRows.length ? schoolCorporateGroupRows.map(formatSchoolCorporateGroup) : ["- No school or corporate groups found for this 7-day window."]),
     "",
     `Birthdays today on ${runDate}:`,
-    ...(birthdaysToday.length ? birthdaysToday.map(formatBirthday) : ["- No volunteer birthdays found for today."]),
+    ...(birthdaysToday.length ? birthdaysToday.map(formatBirthday) : ["- None. Omit the birthday section completely."]),
     "",
     `Volunteer feedback summary from ${thirtyDaysAgo} to ${runDate}:`,
     ...formatFeedbackSummary(volunteerFeedback),
