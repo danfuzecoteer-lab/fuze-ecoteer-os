@@ -85,6 +85,11 @@ function firstXmlTag(block, tag) {
   return match ? decodeXml(match[1].replace(/^<!\[CDATA\[|\]\]>$/g, "")) : "";
 }
 
+function firstXmlAttribute(block, tag, attribute) {
+  const match = block.match(new RegExp(`<${tag}[^>]*\\s${attribute}="([^"]+)"`, "i"));
+  return match ? decodeXml(match[1]) : "";
+}
+
 async function marineEcoNewsContext() {
   const query = encodeURIComponent("(marine conservation OR coral reef OR sea turtle OR seagrass OR plastic pollution) (Malaysia OR Southeast Asia OR ASEAN) when:14d");
   const url = `https://news.google.com/rss/search?q=${query}&hl=en-MY&gl=MY&ceid=MY:en`;
@@ -100,14 +105,16 @@ async function marineEcoNewsContext() {
     const title = firstXmlTag(item, "title");
     const link = firstXmlTag(item, "link");
     const source = firstXmlTag(item, "source");
+    const sourceUrl = firstXmlAttribute(item, "source", "url");
     const published = firstXmlTag(item, "pubDate");
+    const readMoreLink = sourceUrl || (link.includes("news.google.com/rss/articles/") ? url : link) || url;
     return [
       "Global eco news source to use:",
       `- Title: ${title || "Marine conservation news search"}`,
       source ? `- Source: ${source}` : "",
       published ? `- Published: ${published}` : "",
-      `- Read more link: ${link || url}`,
-      "- Use this as the Global eco news item if relevant. Include the Read more link in the email.",
+      `- Read more link: ${readMoreLink}`,
+      "- Use this as the Global eco news item if relevant. Include the Read more link in the email. Do not use Google News RSS article redirect links.",
     ].filter(Boolean).join("\n");
   } catch (error) {
     return [
@@ -116,14 +123,6 @@ async function marineEcoNewsContext() {
       `- Read more link: ${url}`,
       "- Use this search link only if no better current source is available.",
     ].join("\n");
-  }
-}
-
-function safeJson(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
   }
 }
 
@@ -146,6 +145,14 @@ function formatImpactEntry(entry) {
     : "";
 
   return `- ${parts.join(" | ")}${summary ? `: ${summary}` : ""}${metrics ? ` (${metrics})` : ""}`;
+}
+
+function safeJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function formatPriorityImpactEntry(entry) {
