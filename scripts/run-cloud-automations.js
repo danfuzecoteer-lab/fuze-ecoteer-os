@@ -9,13 +9,19 @@ const { updateColdEmailCrmDatabase, updateMarketingResearchDatabase } = require(
 const { createOutreachDrafts } = require("../api/lib/outreach-drafts");
 
 function parseArgs(argv) {
-  const args = { group: "", dryRun: false };
+  const args = { group: "", dryRun: false, onlyId: "", testTo: "" };
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === "--dry-run") {
       args.dryRun = true;
     } else if (value === "--group") {
       args.group = argv[index + 1] || "";
+      index += 1;
+    } else if (value === "--only-id") {
+      args.onlyId = argv[index + 1] || "";
+      index += 1;
+    } else if (value === "--test-to") {
+      args.testTo = argv[index + 1] || "";
       index += 1;
     }
   }
@@ -101,20 +107,26 @@ async function sendStatusEmail({ automation, isoDate, status, lines }) {
 }
 
 async function main() {
-  const { group, dryRun } = parseArgs(process.argv);
+  const { group, dryRun, onlyId, testTo } = parseArgs(process.argv);
   if (!group) {
     throw new Error("Missing required --group value");
   }
 
   const { isoDate } = malaysiaDateParts();
-  const automations = automationsForGroup(group);
+  let automations = automationsForGroup(group);
+  if (onlyId) {
+    automations = automations.filter((automation) => automation.id === onlyId);
+  }
   if (!automations.length) {
-    throw new Error(`No automations found for group: ${group}`);
+    throw new Error(`No automations found for group: ${group}${onlyId ? ` and id: ${onlyId}` : ""}`);
   }
 
   console.log(`Running group ${group} for ${isoDate} (${automations.length} automation/s)`);
 
   for (const automation of automations) {
+    const recipients = testTo
+      ? testTo.split(",").map((item) => item.trim()).filter(Boolean)
+      : automation.to;
     const subject = `${automation.subjectPrefix} | ${isoDate}`;
     try {
       if (automation.id === "grant-database-list") {
@@ -189,7 +201,7 @@ async function main() {
       }
 
       if (dryRun) {
-        console.log(`[dry-run] ${automation.id} -> ${automation.to.join(", ")} :: ${subject}`);
+        console.log(`[dry-run] ${automation.id} -> ${recipients.join(", ")} :: ${subject}`);
         continue;
       }
 
@@ -239,7 +251,7 @@ async function main() {
       }
 
       const body = await generateAutomationEmail(automation, isoDate, noteContext);
-      const sent = await sendEmail({ to: automation.to, subject, body });
+      const sent = await sendEmail({ to: recipients, subject, body });
       console.log(`Sent ${automation.id}: ${sent.id || "ok"}`);
 
       if (statusLines.length) {
