@@ -90,22 +90,21 @@ jobs:
             echo "only_id=${{ inputs.only_id }}" >> "$GITHUB_OUTPUT"
             echo "test_to=${{ inputs.test_to }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "push" ]; then
-            changed="$(node -e 'const event=require(process.env.GITHUB_EVENT_PATH); const commit=event.head_commit||{}; console.log([...(commit.added||[]), ...(commit.modified||[]), ...(commit.removed||[])].join("\n"))')"
-            if echo "$changed" | grep -q '^automation-briefs/daily-eco-test\.md$'; then
+            if [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/daily-eco-test.md') }}" = "true" ]; then
               echo "group=daily-7am" >> "$GITHUB_OUTPUT"
               echo "dry_run=false" >> "$GITHUB_OUTPUT"
               echo "only_id=daily-eco-fun-facts" >> "$GITHUB_OUTPUT"
               echo "test_to=dan.fuzecoteer@gmail.com" >> "$GITHUB_OUTPUT"
-            elif echo "$changed" | grep -q '^automation-briefs/cold-email-crm\.md$'; then
+            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/cold-email-crm.md') }}" = "true" ]; then
               echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
               echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif echo "$changed" | grep -q '^automation-briefs/competitor-analysis\.md$'; then
+            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/competitor-analysis.md') }}" = "true" ]; then
               echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
               echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif echo "$changed" | grep -q '^automation-briefs/outreach-draft-agents\.md$'; then
+            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/outreach-draft-agents.md') }}" = "true" ]; then
               echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
               echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif echo "$changed" | grep -Eq '^(api/lib/outreach-drafts\.js|api/lib/gmail\.js|api/lib/cloud-automations\.js|scripts/run-cloud-automations\.js)$'; then
+            elif [ "${{ contains(toJSON(github.event.head_commit), 'api/lib/outreach-drafts.js') || contains(toJSON(github.event.head_commit), 'api/lib/gmail.js') || contains(toJSON(github.event.head_commit), 'api/lib/cloud-automations.js') || contains(toJSON(github.event.head_commit), 'scripts/run-cloud-automations.js') }}" = "true" ]; then
               echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
               echo "dry_run=true" >> "$GITHUB_OUTPUT"
             else
