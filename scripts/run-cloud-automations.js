@@ -36,6 +36,7 @@ function isDatabaseAutomation(id) {
     "education-outreach-finder",
     "corporate-outreach-finder",
     "travel-outreach-finder",
+    "re-engager",
   ].includes(id);
 }
 
@@ -44,6 +45,7 @@ function isOutreachDraftAutomation(id) {
     "education-outreach-finder",
     "corporate-outreach-finder",
     "travel-outreach-finder",
+    "re-engager",
   ].includes(id);
 }
 
