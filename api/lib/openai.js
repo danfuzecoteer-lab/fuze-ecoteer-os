@@ -7,7 +7,7 @@ function requireEnv(name) {
 }
 
 async function generateAutomationEmail(automation, runDate, noteContext = "") {
-  const model = process.env.OPENAI_MODEL || "gpt-5.4";
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
   const userContent = [
     automation.prompt,
     noteContext,
