@@ -198,6 +198,14 @@ function headerValue(headers, name) {
   return header ? header.value : "";
 }
 
+function emailAddress(value) {
+  const text = String(value || "");
+  const angleMatch = text.match(/<([^<>@\s]+@[^<>\s]+)>/);
+  if (angleMatch) return angleMatch[1].trim().toLowerCase();
+  const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].trim().toLowerCase() : "";
+}
+
 function extractTextPayload(part) {
   if (!part) return "";
   if (part.mimeType === "text/plain" && part.body && part.body.data) {
@@ -244,6 +252,100 @@ async function getMessage(id) {
     date: headerValue(headers, "Date"),
     body: stripQuotedReply(extractTextPayload(message.payload)),
   };
+}
+
+async function getThread(id) {
+  const params = new URLSearchParams({ format: "full" });
+  const thread = await gmailRequest(`/threads/${id}?${params.toString()}`);
+  return (thread.messages || []).map((message) => {
+    const headers = message.payload ? message.payload.headers : [];
+    return {
+      id: message.id,
+      threadId: message.threadId,
+      internalDate: Number(message.internalDate || 0),
+      labelIds: message.labelIds || [],
+      snippet: message.snippet || "",
+      subject: headerValue(headers, "Subject"),
+      from: headerValue(headers, "From"),
+      to: headerValue(headers, "To"),
+      date: headerValue(headers, "Date"),
+      body: stripQuotedReply(extractTextPayload(message.payload)),
+    };
+  });
+}
+
+function isAutomationMessage(message) {
+  const subject = String(message.subject || "").toLowerCase();
+  const from = String(message.from || "").toLowerCase();
+  return (
+    subject.includes("automation completed") ||
+    subject.includes("automation failed") ||
+    subject.includes("daily eco fun fact") ||
+    subject.includes("github actions") ||
+    from.includes("github") ||
+    from.includes("noreply")
+  );
+}
+
+function isOwnMessage(message) {
+  if ((message.labelIds || []).includes("SENT")) return true;
+  const fromAddress = emailAddress(message.from);
+  const configured = emailAddress(process.env.GMAIL_FROM || "dan.fuzecoteer@gmail.com");
+  return Boolean(fromAddress && configured && fromAddress === configured);
+}
+
+async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 180, maxResults = 10 } = {}) {
+  const query = [
+    "in:sent",
+    `older_than:${olderThanDays}d`,
+    `newer_than:${newerThanDays}d`,
+    "-subject:\"Automation Completed\"",
+    "-subject:\"Automation Failed\"",
+    "-subject:\"Daily Eco Fun Fact\"",
+  ].join(" ");
+  const messages = await searchMessages({ query, maxResults: maxResults * 8 });
+  const now = Date.now();
+  const cutoff = now - olderThanDays * 24 * 60 * 60 * 1000;
+  const seenThreads = new Set();
+  const candidates = [];
+
+  for (const message of messages) {
+    if (seenThreads.has(message.threadId)) continue;
+    seenThreads.add(message.threadId);
+    const threadMessages = await getThread(message.threadId);
+    if (!threadMessages.length || threadMessages.some(isAutomationMessage)) continue;
+    const sorted = threadMessages.slice().sort((a, b) => a.internalDate - b.internalDate);
+    const latest = sorted[sorted.length - 1];
+    const latestOwn = isOwnMessage(latest);
+    if (!latestOwn) continue;
+    if (latest.internalDate > cutoff) continue;
+
+    const latestSent = sorted.slice().reverse().find(isOwnMessage);
+    if (!latestSent) continue;
+    const to = emailAddress(latestSent.to);
+    if (!to) continue;
+
+    const inboundAfterLatestSent = sorted.some((item) => !isOwnMessage(item) && item.internalDate > latestSent.internalDate);
+    if (inboundAfterLatestSent) continue;
+
+    candidates.push({
+      to,
+      subject: latestSent.subject || latest.subject || "Following up",
+      lastSentDate: latestSent.date,
+      lastSentText: cleanSentExampleText(latestSent.body || latestSent.snippet || ""),
+      threadSummary: sorted.slice(-4).map((item) => ({
+        from: item.from,
+        to: item.to,
+        date: item.date,
+        subject: item.subject,
+        text: cleanSentExampleText(item.body || item.snippet || "").slice(0, 900),
+      })),
+    });
+
+    if (candidates.length >= maxResults) break;
+  }
+
+  return candidates;
 }
 
 function isLikelyReplyOrNote(message, subjectPrefix) {
@@ -337,6 +439,7 @@ async function buildAutomationNoteContext(automation) {
 module.exports = {
   buildAutomationNoteContext,
   createDraftEmail,
+  reengagementCandidates,
   recentSentEmailExamples,
   recentAutomationNotes,
   sendEmail,
