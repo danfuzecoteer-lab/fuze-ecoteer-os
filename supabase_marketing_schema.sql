@@ -121,7 +121,7 @@ create table if not exists public.marketing_competitor_evidence_log (
 
 create table if not exists public.marketing_cold_email_leads (
   id bigserial primary key,
-  lead_segment text not null check (lead_segment in ('School', 'Day care / Tadika / Taska', 'Corporate HR / CSR')),
+  lead_segment text not null check (lead_segment in ('School', 'Day care / Tadika / Taska', 'Tadika / Preschool', 'University', 'Corporate HR / CSR', 'Network / Referral Partner')),
   organisation_name text not null,
   country text not null default '',
   city text,
@@ -137,6 +137,11 @@ create table if not exists public.marketing_cold_email_leads (
   priority text default 'medium',
   status text default 'new',
   next_action text,
+  last_drafted_at timestamptz,
+  last_drafted_by_agent text,
+  last_draft_id text,
+  last_draft_message_id text,
+  draft_count integer not null default 0,
   source text,
   confidence numeric check (confidence is null or (confidence >= 0 and confidence <= 1)),
   run_date date,
@@ -144,6 +149,33 @@ create table if not exists public.marketing_cold_email_leads (
   updated_at timestamptz default now(),
   unique (lead_segment, organisation_name, country)
 );
+
+do $$
+declare
+  constraint_name text;
+begin
+  select conname into constraint_name
+  from pg_constraint
+  where conrelid = 'public.marketing_cold_email_leads'::regclass
+    and contype = 'c'
+    and pg_get_constraintdef(oid) like '%lead_segment%'
+  limit 1;
+
+  if constraint_name is not null then
+    execute format('alter table public.marketing_cold_email_leads drop constraint %I', constraint_name);
+  end if;
+end $$;
+
+alter table public.marketing_cold_email_leads
+  add constraint marketing_cold_email_leads_lead_segment_check
+  check (lead_segment in ('School', 'Day care / Tadika / Taska', 'Tadika / Preschool', 'University', 'Corporate HR / CSR', 'Network / Referral Partner'));
+
+alter table public.marketing_cold_email_leads
+  add column if not exists last_drafted_at timestamptz,
+  add column if not exists last_drafted_by_agent text,
+  add column if not exists last_draft_id text,
+  add column if not exists last_draft_message_id text,
+  add column if not exists draft_count integer not null default 0;
 
 alter table public.marketing_research_rows enable row level security;
 alter table public.marketing_competitor_weekly_snapshots enable row level security;
