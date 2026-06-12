@@ -108,6 +108,19 @@ async function sendStatusEmail({ automation, isoDate, status, lines }) {
   });
 }
 
+async function sendStatusEmailBestEffort({ automation, isoDate, status, lines }) {
+  try {
+    const result = await sendStatusEmail({ automation, isoDate, status, lines });
+    if (result) {
+      console.log(`Sent ${automation.id} ${status.toLowerCase()} notice: ${result.id || "ok"}`);
+    }
+    return result;
+  } catch (error) {
+    console.warn(`Could not send ${automation.id} ${status.toLowerCase()} notice: ${error.message}`);
+    return null;
+  }
+}
+
 async function main() {
   const { group, dryRun, onlyId, testTo } = parseArgs(process.argv);
   if (!group) {
@@ -147,13 +160,12 @@ async function main() {
         if (result.warning) {
           lines.push(`Warning: ${result.warning}`);
         }
-        const status = await sendStatusEmail({
+        await sendStatusEmailBestEffort({
           automation,
           isoDate,
           status: "Completed",
           lines,
         });
-        console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
         continue;
       }
 
@@ -189,13 +201,12 @@ async function main() {
         }
 
         if (!dryRun) {
-          const status = await sendStatusEmail({
+          await sendStatusEmailBestEffort({
             automation,
             isoDate,
             status: "Completed",
             lines,
           });
-          console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
         } else {
           console.log(lines.join("\n"));
         }
@@ -258,32 +269,24 @@ async function main() {
 
       if (statusLines.length) {
         statusLines.push(`Brief email sent: ${sent.id || "ok"}`);
-        const status = await sendStatusEmail({
+        await sendStatusEmailBestEffort({
           automation,
           isoDate,
           status: "Completed",
           lines: statusLines,
         });
-        console.log(`Sent ${automation.id} completion notice: ${status && status.id ? status.id : "ok"}`);
       }
     } catch (error) {
       console.error(`${automation.id} failed: ${error.message}`);
-      try {
-        const status = await sendStatusEmail({
-          automation,
-          isoDate,
-          status: "Failed",
-          lines: [
-            `Error: ${error.message}`,
-            "Check the GitHub Actions run logs for the full trace.",
-          ],
-        });
-        if (status) {
-          console.log(`Sent ${automation.id} failure notice: ${status.id || "ok"}`);
-        }
-      } catch (emailError) {
-        console.warn(`Could not send ${automation.id} failure notice: ${emailError.message}`);
-      }
+      await sendStatusEmailBestEffort({
+        automation,
+        isoDate,
+        status: "Failed",
+        lines: [
+          `Error: ${error.message}`,
+          "Check the GitHub Actions run logs for the full trace.",
+        ],
+      });
       throw error;
     }
   }
