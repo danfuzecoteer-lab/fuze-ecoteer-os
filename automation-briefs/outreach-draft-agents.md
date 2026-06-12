@@ -67,3 +67,17 @@ Offer: Perhentian volunteer conservation projects:
 Output: 10 Gmail drafts promoting collaboration or referral opportunities for PTP, PMRS and PEEP, personalized to each lead.
 
 Style learning: use Daniel's recently sent travel, volunteer, Perhentian, PTP, PMRS, PEEP, collaboration and partner emails as examples when available.
+
+## Re-engager
+
+Schedule: Monday to Friday at 8am Kuala Lumpur time.
+
+Audience: people Daniel has already emailed who have not replied in the past month.
+
+Selection rule: use Gmail sent threads only. Select threads where Daniel was the last person to send an email, the latest message is older than 30 days, and there is no later reply in the thread.
+
+Output: up to 10 Gmail drafts per day.
+
+Style: short, warm, useful and low-pressure. The draft should read the previous thread context and reconnect naturally without pretending the recipient replied.
+
+Safety: save drafts only. Do not send automatically.
