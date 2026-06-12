@@ -155,6 +155,14 @@ function isOpenAiQuotaError(error) {
   return /insufficient_quota|exceeded your current quota|billing details/i.test(cleanText(error && error.message));
 }
 
+function isGmailReadScopeError(error) {
+  return /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes|insufficient permission|PERMISSION_DENIED/i.test(cleanText(error && error.message));
+}
+
+function summarizeError(error, maxLength = 360) {
+  return truncateText(cleanText(error && error.message ? error.message : error), maxLength);
+}
+
 function truncateText(value, maxLength = 260) {
   const text = cleanText(value).replace(/\s+/g, " ");
   if (text.length <= maxLength) return text;
@@ -389,7 +397,11 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
       skipped.push("No recent sent-email examples were found for this agent, so drafts used CRM and research context only.");
     }
   } catch (error) {
-    skipped.push(`Could not load recent sent-email examples: ${error.message}`);
+    if (isGmailReadScopeError(error)) {
+      skipped.push("Could not load recent sent-email examples because Gmail read scope is not available. Draft creation can still continue.");
+    } else {
+      skipped.push(`Could not load recent sent-email examples: ${summarizeError(error)}`);
+    }
   }
 
   try {
@@ -418,19 +430,27 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
       continue;
     }
 
-    const draft = await createDraftEmail({
-      to: [to],
-      subject: cleanText(plan.subject).slice(0, 180) || `${profile.name} outreach`,
-      body: cleanText(plan.body),
-    });
-    await markLeadDrafted({ lead: matchingLead, profile, draft, runDate });
-    created.push({
-      draftId: draft.id,
-      messageId: draft.message && draft.message.id,
-      to,
-      leadName: cleanText(plan.lead_name) || matchingLead.organisation_name,
-      personalizationBasis: cleanText(plan.personalization_basis),
-    });
+    try {
+      const draft = await createDraftEmail({
+        to: [to],
+        subject: cleanText(plan.subject).slice(0, 180) || `${profile.name} outreach`,
+        body: cleanText(plan.body),
+      });
+      await markLeadDrafted({ lead: matchingLead, profile, draft, runDate });
+      created.push({
+        draftId: draft.id,
+        messageId: draft.message && draft.message.id,
+        to,
+        leadName: cleanText(plan.lead_name) || matchingLead.organisation_name,
+        personalizationBasis: cleanText(plan.personalization_basis),
+      });
+    } catch (error) {
+      skipped.push(`Could not create draft for ${matchingLead.organisation_name} <${to}>: ${summarizeError(error)}`);
+    }
+  }
+
+  if (!created.length && plans.length) {
+    throw new Error(`No Gmail drafts were created. ${skipped.slice(-3).join(" ")}`);
   }
 
   return {
