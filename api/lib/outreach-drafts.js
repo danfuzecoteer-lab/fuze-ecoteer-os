@@ -12,7 +12,7 @@ function requireEnv(name) {
 const AGENT_PROFILES = {
   "education-outreach-finder": {
     name: "Education Outreach Finder",
-    segments: ["School", "Tadika / Preschool", "University"],
+    segments: ["School", "Tadika / Preschool", "Day care / Tadika / Taska", "University"],
     focus: "schools, taska, tadika, universities and education groups",
     countries: ["Malaysia", "Singapore", "Thailand", "Hong Kong", "Korea", "China", "Indonesia", "Japan"],
     offer: "Fuze Ecoteer school camps, student expeditions, service-learning trips and conservation education in Malaysia",
@@ -37,6 +37,13 @@ const AGENT_PROFILES = {
   },
 };
 
+const SEGMENT_ALIASES = {
+  "Tadika / Preschool": ["Day care / Tadika / Taska", "Day care", "Taska", "Tadika", "Preschool", "Kindergarten"],
+  "Day care / Tadika / Taska": ["Tadika / Preschool", "Day care", "Taska", "Tadika", "Preschool", "Kindergarten"],
+  "Corporate HR / CSR": ["Corporate", "CSR", "ESG", "HR", "Sustainability"],
+  "Network / Referral Partner": ["Travel / Tourism", "Travel Agent", "Referral Partner", "Influencer", "Career Services"],
+};
+
 function cleanText(value) {
   return String(value || "").trim();
 }
@@ -48,6 +55,14 @@ function isValidEmail(value) {
 function textIncludesAny(text, values = []) {
   const lower = cleanText(text).toLowerCase();
   return values.some((value) => lower.includes(String(value).toLowerCase()));
+}
+
+function segmentMatches(profile, segment) {
+  const normalizedSegment = cleanText(segment).toLowerCase();
+  return profile.segments.some((profileSegment) => {
+    const values = [profileSegment, ...(SEGMENT_ALIASES[profileSegment] || [])];
+    return values.some((value) => cleanText(value).toLowerCase() === normalizedSegment);
+  });
 }
 
 function scoreLead(profile, lead) {
@@ -65,7 +80,7 @@ function scoreLead(profile, lead) {
     lead.priority,
   ].join(" ");
 
-  if (profile.segments.includes(lead.lead_segment)) score += 30;
+  if (segmentMatches(profile, lead.lead_segment)) score += 30;
   if (profile.countries && textIncludesAny(lead.country, profile.countries)) score += 15;
   if (profile.locations && textIncludesAny(`${lead.country} ${lead.city} ${lead.research_notes}`, profile.locations)) score += 20;
   if (isValidEmail(lead.email)) score += 25;
