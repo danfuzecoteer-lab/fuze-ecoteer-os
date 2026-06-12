@@ -1,17 +1,6 @@
 name: Cloud Automations
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "automation-briefs/competitor-analysis.md"
-      - "automation-briefs/cold-email-crm.md"
-      - "automation-briefs/outreach-draft-agents.md"
-      - "api/lib/outreach-drafts.js"
-      - "api/lib/gmail.js"
-      - "api/lib/cloud-automations.js"
-      - "scripts/run-cloud-automations.js"
   schedule:
     # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
     - cron: "7 23 * * *"
@@ -89,23 +78,6 @@ jobs:
             echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
             echo "only_id=${{ inputs.only_id }}" >> "$GITHUB_OUTPUT"
             echo "test_to=${{ inputs.test_to }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            if [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/cold-email-crm.md') }}" = "true" ]; then
-              echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
-              echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/competitor-analysis.md') }}" = "true" ]; then
-              echo "group=competition-analysis" >> "$GITHUB_OUTPUT"
-              echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif [ "${{ contains(toJSON(github.event.head_commit), 'automation-briefs/outreach-draft-agents.md') }}" = "true" ]; then
-              echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
-              echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            elif [ "${{ contains(toJSON(github.event.head_commit), 'api/lib/outreach-drafts.js') || contains(toJSON(github.event.head_commit), 'api/lib/gmail.js') || contains(toJSON(github.event.head_commit), 'api/lib/cloud-automations.js') || contains(toJSON(github.event.head_commit), 'scripts/run-cloud-automations.js') }}" = "true" ]; then
-              echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
-              echo "dry_run=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "Push event did not change a runnable automation brief; use workflow_dispatch or the schedule instead." >&2
-              exit 1
-            fi
           elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
             echo "group=daily-7am" >> "$GITHUB_OUTPUT"
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
