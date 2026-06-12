@@ -83,8 +83,43 @@ async function selectRows(table, params = []) {
   return response.json();
 }
 
+async function updateRows(table, filters, values) {
+  const { url, serviceRoleKey } = supabaseConfig();
+  const search = new URLSearchParams();
+  const entries = Array.isArray(filters) ? filters : Object.entries(filters || {});
+
+  for (const [key, value] of entries) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.append(key, String(value));
+    }
+  }
+
+  const query = search.toString();
+  if (!query) {
+    throw new Error("Supabase update requires at least one filter");
+  }
+
+  const response = await fetch(`${url}/rest/v1/${table}?${query}`, {
+    method: "PATCH",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(values),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase update failed: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
 module.exports = {
   insertRows,
   selectRows,
+  updateRows,
   upsertRows,
 };
