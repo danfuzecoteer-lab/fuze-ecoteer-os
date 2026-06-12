@@ -37,7 +37,7 @@ const AGENT_PROFILES = {
     offer: "Fuze Ecoteer Perhentian volunteer conservation projects: PTP turtle conservation, PMRS marine research and PEEP eco education",
     audienceNote: "Do not use schools, universities, taska, tadika or day-care leads for this agent. Prioritize travel websites, travel agents, volunteer travel platforms, gap-year providers, responsible tourism publishers, travel media, career-break sites, influencers and referral/collaboration partners that can promote PTP, PMRS and PEEP.",
     rejectTerms: ["school", "university", "college", "tadika", "taska", "preschool", "kindergarten", "day care", "daycare"],
-    requireTerms: ["travel", "tour", "tourism", "agent", "gap", "volunteer abroad", "career break", "influencer", "media", "blog", "website", "referral", "collaboration", "adventure", "expedition", "responsible tourism", "eco tourism", "ecotourism"],
+    requireTerms: ["travel", "tour", "tourism", "agent", "gap", "volunteer abroad", "career break", "influencer", "media", "blog", "publisher", "magazine", "referral partner", "adventure", "expedition", "responsible tourism", "eco tourism", "ecotourism"],
     sentSearchTerms: ["travel", "volunteer", "Perhentian", "PTP", "PMRS", "PEEP", "collaboration", "partner"],
   },
 };
