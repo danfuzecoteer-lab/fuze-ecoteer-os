@@ -63,7 +63,12 @@ function cleanText(value) {
 }
 
 function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
+  const email = cleanText(value).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return false;
+  if (/[\/\\]/.test(email)) return false;
+  if (/\.(png|jpg|jpeg|gif|svg|webp|css|js|ico)$/i.test(email)) return false;
+  if (email.includes("noreply") || email.includes("no-reply")) return false;
+  return true;
 }
 
 function textIncludesAny(text, values = []) {
@@ -111,6 +116,32 @@ function satisfiesRequiredLeadTerms(profile, lead) {
   return profile.requireTerms.some((term) => haystack.includes(String(term).toLowerCase()));
 }
 
+function isStrictlyEligibleForProfile(profile, lead) {
+  const haystack = [
+    lead.lead_segment,
+    lead.organisation_name,
+    lead.contact_department,
+    lead.research_notes,
+    lead.likely_need,
+    lead.recommended_offer,
+    lead.personalization_angle,
+    lead.source,
+    lead.website,
+  ].join(" ").toLowerCase();
+
+  if (profile.name === "Corporate Outreach Finder") {
+    return !/(school|university|college|tadika|taska|preschool|kindergarten|day care|daycare|admissions|campus|\.edu)/i.test(haystack)
+      && /(corporate|company|berhad|bhd|sdn bhd|group|hr|human resources|csr|esg|sustainability|employee|foundation|bank|airports|plantation|property|telekom|insurance|logistics|manufacturing)/i.test(haystack);
+  }
+
+  if (profile.name === "Travel Outreach Finder") {
+    return !/(school|university|college|tadika|taska|preschool|kindergarten|day care|daycare|admissions|campus|\.edu|berhad|bhd|sdn bhd|corporation|holdings|bank)/i.test(haystack)
+      && /(travel|tour|tourism|travel agent|travel agency|volunteer travel|volunteer abroad|gap year|career break|responsible tourism|responsible travel|eco tourism|ecotourism|adventure travel|travel media|travel blog|publisher|directory|referral partner|collaboration partner|influencer)/i.test(haystack);
+  }
+
+  return true;
+}
+
 function isPreviouslyDrafted(lead) {
   const status = cleanText(lead.status).toLowerCase();
   return Boolean(
@@ -154,6 +185,7 @@ function pickLeads(profile, leads, limit) {
     .filter((lead) => !isPreviouslyDrafted(lead))
     .filter((lead) => !isRejectedLead(profile, lead))
     .filter((lead) => satisfiesRequiredLeadTerms(profile, lead))
+    .filter((lead) => isStrictlyEligibleForProfile(profile, lead))
     .map((lead) => ({ ...lead, _score: scoreLead(profile, lead) }))
     .filter((lead) => lead._score >= 25)
     .sort((a, b) => b._score - a._score || cleanText(a.organisation_name).localeCompare(cleanText(b.organisation_name)));
