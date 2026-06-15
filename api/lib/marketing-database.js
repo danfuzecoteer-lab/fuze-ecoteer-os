@@ -26,7 +26,12 @@ function cleanText(value) {
 }
 
 function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
+  const email = cleanText(value).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return false;
+  if (/[\/\\]/.test(email)) return false;
+  if (/\.(png|jpg|jpeg|gif|svg|webp|css|js|ico)$/i.test(email)) return false;
+  if (email.includes("noreply") || email.includes("no-reply")) return false;
+  return true;
 }
 
 function uniqueStrings(values) {
@@ -158,6 +163,99 @@ const CORPORATE_TERMS = [
   "employee engagement",
 ];
 
+const UNIVERSITY_TERMS = [
+  "university",
+  "college",
+  "faculty",
+  "polytechnic",
+  "campus",
+  "higher education",
+  "study abroad",
+];
+
+const PRESCHOOL_TERMS = [
+  "tadika",
+  "taska",
+  "preschool",
+  "pre-school",
+  "kindergarten",
+  "day care",
+  "daycare",
+  "early years",
+  "nursery",
+  "childcare",
+];
+
+const SCHOOL_TERMS = [
+  "school",
+  "international school",
+  "secondary school",
+  "primary school",
+  "academy",
+  "student trip",
+  "school trip",
+  "outdoor education",
+];
+
+const TRAVEL_REFERRAL_SEEDS = [
+  {
+    organisation_name: "GoAbroad",
+    country: "United States",
+    city: null,
+    website: "https://www.goabroad.com/",
+    source: "Seeded official website benchmark for travel / volunteer platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Projects Abroad",
+    country: "United Kingdom",
+    city: null,
+    website: "https://www.projects-abroad.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "GoEco",
+    country: "International",
+    city: null,
+    website: "https://www.goeco.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Kaya Responsible Travel",
+    country: "United Kingdom",
+    city: null,
+    website: "https://www.kayavolunteer.com/",
+    source: "Seeded official website benchmark for responsible travel / volunteer platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "WorkingAbroad",
+    country: "International",
+    city: null,
+    website: "https://www.workingabroad.com/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "International Volunteer HQ",
+    country: "New Zealand",
+    city: null,
+    website: "https://www.volunteerhq.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "GVI",
+    country: "International",
+    city: null,
+    website: "https://www.gviworld.com/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+];
+
 function combinedLeadText(row) {
   return [
     cleanText(row.lead_segment || row.segment || row.type),
@@ -182,6 +280,101 @@ function includesAny(text, terms) {
 function isTravelReferralLead(row) {
   const text = combinedLeadText(row);
   return includesAny(text, TRAVEL_REFERRAL_TERMS) && !includesAny(text, EDUCATION_TERMS) && !includesAny(text, CORPORATE_TERMS);
+}
+
+function isCorporateLead(row) {
+  const text = combinedLeadText(row);
+  return includesAny(text, CORPORATE_TERMS) && !includesAny(text, EDUCATION_TERMS);
+}
+
+function isUniversityLead(row) {
+  const text = combinedLeadText(row);
+  return includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
+}
+
+function isPreschoolLead(row) {
+  const text = combinedLeadText(row);
+  return includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, CORPORATE_TERMS);
+}
+
+function isSchoolLead(row) {
+  const text = combinedLeadText(row);
+  return includesAny(text, SCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
+}
+
+async function fetchTravelSeedEvidence(seed) {
+  const checkedUrls = [];
+  const emails = new Set();
+  const seen = new Set();
+  const base = cleanText(seed.website).replace(/\/+$/, "");
+  const candidates = [
+    base,
+    `${base}/contact`,
+    `${base}/contact-us`,
+    `${base}/about`,
+    `${base}/about-us`,
+  ];
+
+  for (const url of candidates) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    try {
+      const response = await fetch(url, {
+        headers: { "user-agent": "Mozilla/5.0 Codex" },
+      });
+      if (!response.ok) continue;
+      checkedUrls.push(url);
+      const text = await response.text();
+      const matches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
+      for (const match of matches) {
+        const email = cleanText(match).toLowerCase();
+        if (isValidEmail(email)) {
+          emails.add(email);
+        }
+      }
+    } catch (_error) {
+      // Ignore fetch failures for seed enrichment.
+    }
+  }
+
+  return {
+    emails: [...emails],
+    checkedUrls,
+  };
+}
+
+async function buildTravelReferralFallbackRows(runDate, neededCount) {
+  const rows = [];
+  for (const seed of TRAVEL_REFERRAL_SEEDS.slice(0, neededCount)) {
+    const evidence = await fetchTravelSeedEvidence(seed);
+    const email = evidence.emails[0] || null;
+    const emailEvidence = email ? `Public email found: ${email}` : "No public email found during fallback site scan.";
+    const checkedSource = evidence.checkedUrls.length ? evidence.checkedUrls.join(", ") : seed.website;
+    rows.push({
+      lead_segment: "Network / Referral Partner",
+      organisation_name: seed.organisation_name,
+      country: seed.country,
+      city: seed.city,
+      website: seed.website,
+      contact_department: "Partnerships / Enquiries",
+      contact_name: null,
+      email,
+      linkedin_url: null,
+      research_notes: [
+        `${seed.organisation_name} is a travel / volunteer travel / responsible tourism platform relevant to referral partnerships for PTP, PMRS and PEEP.`,
+        emailEvidence,
+        `Fallback source URLs checked: ${checkedSource}`,
+      ].join(" "),
+      likely_need: "Fresh responsible travel or conservation programme partners for its audience.",
+      recommended_offer: seed.recommended_offer,
+      personalization_angle: `${seed.organisation_name} already promotes travel or volunteer experiences, so a Perhentian conservation collaboration is a direct audience fit.`,
+      priority: email ? "Priority B - 80/100" : "Nurture - 55/100",
+      next_action: email ? "send tailored cold email" : "verify public contact email",
+      source: `${seed.source} | ${checkedSource}${email ? ` | public email verified: ${email}` : ""}`,
+      confidence: email ? 0.82 : 0.58,
+    });
+  }
+  return rows;
 }
 
 function cleanConfidence(value) {
@@ -369,57 +562,125 @@ function fallbackMarketingResearchRows(runDate) {
       source: "https://seatru.umt.edu.my/volunteer-registration-2/",
       strength: "University-linked turtle conservation credibility",
       risk: "Strong trust signal for turtle-specific volunteer searches",
-      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly",
-      current_score: 76,
-      rating_band: "Strong competitor",
-      trend: "Benchmark leader",
-      active_marketing_score: 22,
+      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly on one dedicated page",
+      current_score: 74,
+      rating_band: "Moderate competitor",
+      trend: "Strong competitor",
+      active_marketing_score: 20,
       momentum_score: 7,
-      threat_level: "High",
+      threat_level: "Medium",
       website_score: 11,
-      social_score: 6,
-      seo_aeo_score: 15,
+      social_score: 7,
+      seo_aeo_score: 13,
       youtube_score: 4,
-      cost_value_score: 7,
+      cost_value_score: 6,
       logistics_score: 6,
       trust_score: 7,
       strategic_learning_score: 4,
       most_active_channel: "Website",
-      main_campaign_theme: "Turtle conservation volunteering",
-      keyword_notes: "Track turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer Malaysia",
-      aeo_notes: "Compare direct answers on turtle season, volunteer duties, cost, dates and how to apply",
-      backlink_notes: "University authority is a strong trust signal",
+      main_campaign_theme: "Turtle volunteering",
+      keyword_notes: "Track turtle conservation volunteer Malaysia, sea turtle volunteering Malaysia",
+      aeo_notes: "Compare answers on seasonality, duties, accommodation, joining steps and impact",
+      backlink_notes: "Review university and conservation backlinks",
       social_notes: "Check public social activity weekly",
       website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
       evidence_links: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      what_we_can_learn: "Academic and conservation credibility reduces buyer anxiety",
-      how_we_are_better: "FE can package conservation with broader island experience and school/corporate pathways",
-      recommended_action: "Add stronger turtle volunteering FAQs and evidence of impact on the FE app/site",
+      what_we_can_learn: "University credibility is a strong trust signal for turtle programmes",
+      how_we_are_better: "FE can show a more rounded guest journey if logistics and outcomes are clearer",
+      recommended_action: "Tighten FE turtle project landing page and FAQs",
       confidence: 0.55,
     },
     {
       research_type: "Price Comparison",
-      organisation: "Fuze Ecoteer",
+      organisation: "Market benchmark",
       offer: "Turtle Volunteer project",
-      visible_price: "Use current FE fees",
+      visible_price: "Research needed",
       country: "Malaysia",
-      location: "Perhentian / Malaysia",
-      target_market: "Volunteers, schools, corporates",
+      target_market: "Volunteers and conservation travellers",
       category: "Turtle Volunteer project",
-      source: "Internal FE pricing and website review",
-      strength: "Authentic conservation and local delivery",
-      risk: "Value is harder to compare if price, inclusions and proof are unclear",
-      fe_response: "Make pricing, inclusions, impact and next step clearer",
-      current_score: 68,
+      source: "Search phrases: sea turtle volunteering Malaysia, turtle conservation volunteer Southeast Asia",
+      strength: "Turtle conservation remains a strong specialist hook",
+      risk: "Competitors can own turtle-specific search intent if FE copy is vague",
+      fe_response: "Create one clear FE turtle volunteering comparison block with season, duties and inclusions",
+      current_score: 64,
       rating_band: "Moderate competitor",
       trend: "Opportunity to beat",
-      active_marketing_score: 22,
-      momentum_score: 8,
-      threat_level: "Internal opportunity",
-      what_we_can_learn: "Price rows need exact inclusions and proof, not just a number",
-      how_we_are_better: "FE has direct project credibility and can show real outcomes",
-      recommended_action: "Create one price comparison block per FE product type",
+      active_marketing_score: 16,
+      momentum_score: 5,
+      threat_level: "Medium",
+      keyword_notes: "turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer",
+      aeo_notes: "Answer cost, timing, accommodation, activities, safety and impact directly",
+      recommended_action: "Build an FE turtle volunteering page with stronger search intent coverage",
       confidence: 0.5,
+    },
+    {
+      research_type: "Price Comparison",
+      organisation: "Market benchmark",
+      offer: "Diving volunteer project",
+      visible_price: "Research needed",
+      country: "Malaysia / Southeast Asia",
+      target_market: "Divers and marine conservation volunteers",
+      category: "Diving volunteer project",
+      source: "Search phrases: scuba diving volunteer Malaysia, marine conservation diving volunteer Southeast Asia",
+      strength: "Diving plus conservation is commercially strong if clearly packaged",
+      risk: "Specialist dive competitors can look easier to understand",
+      fe_response: "Clarify FE marine research and diving-adjacent value propositions on site",
+      current_score: 63,
+      rating_band: "Moderate competitor",
+      trend: "Needs review",
+      active_marketing_score: 18,
+      momentum_score: 6,
+      threat_level: "Medium",
+      keyword_notes: "scuba diving volunteer Malaysia, marine conservation diving, coral reef restoration volunteer",
+      aeo_notes: "Answer dive certification, survey work, accommodation and safety",
+      recommended_action: "Split diving-related offers into a dedicated FE comparison block",
+      confidence: 0.5,
+    },
+    {
+      research_type: "Price Comparison",
+      organisation: "Market benchmark",
+      offer: "3d2n eco package",
+      visible_price: "Research needed",
+      country: "Malaysia",
+      target_market: "Domestic travellers, families, schools and corporate groups",
+      category: "3d2n eco package",
+      source: "Search phrases: eco package Malaysia 3d2n, island eco experience Malaysia",
+      strength: "Short-stay eco packages are easier to sell when logistics and inclusions are clear",
+      risk: "Travel operators with clearer package pages can outrank and outconvert FE",
+      fe_response: "Create one concise 3d2n eco package page with inclusions, timings and CTA",
+      current_score: 58,
+      rating_band: "Weak online presence",
+      trend: "Opportunity to beat",
+      active_marketing_score: 12,
+      momentum_score: 4,
+      threat_level: "Medium",
+      keyword_notes: "3d2n eco package Malaysia, island eco package, conservation stay Malaysia",
+      aeo_notes: "Answer who it is for, inclusions, exclusions, transport and booking steps",
+      recommended_action: "Turn FE short eco package into a clearly priced landing page",
+      confidence: 0.5,
+    },
+    {
+      research_type: "Price Comparison",
+      organisation: "Market benchmark",
+      offer: "Turtle necklace",
+      visible_price: "Research needed",
+      country: "Malaysia",
+      target_market: "Supporters, travellers and gift buyers",
+      category: "Turtle necklace",
+      source: "Search phrases: turtle conservation necklace Malaysia, eco jewellery turtle",
+      strength: "Small donation-linked products can convert if story and mission are clear",
+      risk: "Product pages without story or proof are easy to ignore",
+      fe_response: "Frame product with impact story, imagery and simple add-to-cart path",
+      current_score: 46,
+      rating_band: "Weak online presence",
+      trend: "Needs review",
+      active_marketing_score: 10,
+      momentum_score: 3,
+      threat_level: "Low",
+      keyword_notes: "turtle necklace Malaysia, eco jewellery turtle, conservation gift turtle",
+      aeo_notes: "Answer material, cause, price and shipping simply",
+      recommended_action: "Create a tighter product page or remove it from priority outreach until ready",
+      confidence: 0.45,
     },
     {
       research_type: "Price Comparison",
@@ -677,6 +938,22 @@ function normalizeColdEmailLead(row, runDate) {
     return null;
   }
 
+  if (segment === "Corporate HR / CSR" && !isCorporateLead({ ...row, lead_segment: segment })) {
+    return null;
+  }
+
+  if (segment === "University" && !isUniversityLead({ ...row, lead_segment: segment })) {
+    return null;
+  }
+
+  if (segment === "Tadika / Preschool" && !isPreschoolLead({ ...row, lead_segment: segment })) {
+    return null;
+  }
+
+  if (segment === "School" && !isSchoolLead({ ...row, lead_segment: segment })) {
+    return null;
+  }
+
   return {
     lead_segment: segment,
     organisation_name: cleanText(row.organisation_name || row.organisation || row.company || row.school || row.name),
@@ -773,6 +1050,19 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false 
   const normalized = rows
     .map((row) => normalizeColdEmailLead(row, runDate))
     .filter((row) => row && row.organisation_name);
+
+  const currentTravelCount = normalized.filter((row) => row.lead_segment === "Network / Referral Partner").length;
+  const travelPlan = plan.find((item) => item.segment === "Network / Referral Partner");
+  const neededTravelCount = travelPlan ? travelPlan.count : 0;
+  if (currentTravelCount < neededTravelCount) {
+    const fallbackRows = await buildTravelReferralFallbackRows(runDate, neededTravelCount - currentTravelCount);
+    const normalizedFallback = fallbackRows
+      .map((row) => normalizeColdEmailLead(row, runDate))
+      .filter((row) => row && row.organisation_name);
+    normalized.push(...normalizedFallback);
+    warnings.push(`Travel fallback added ${normalizedFallback.length} seeded referral lead(s) because only ${currentTravelCount} travel rows were generated.`);
+  }
+
   if (dryRun) return { rows: normalized, saved: [], warning: warnings.join(" | ") || null };
   const saved = await upsertRows("marketing_cold_email_leads", normalized, "lead_segment,organisation_name,country");
   return { rows: normalized, saved, warning: warnings.join(" | ") || null };
