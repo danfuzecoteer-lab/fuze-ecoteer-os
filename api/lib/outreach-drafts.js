@@ -27,6 +27,8 @@ const AGENT_PROFILES = {
     locations: ["Kuala Lumpur", "KL", "Selangor", "Kelantan", "Terengganu", "Pahang"],
     offer: "Fuze Ecoteer corporate team building with a cause, ESG volunteering, CSR impact days and conservation-led employee engagement",
     audienceNote: "Focus on Kuala Lumpur and Selangor first, then Kelantan, Terengganu and Pahang.",
+    rejectTerms: ["school", "university", "college", "tadika", "taska", "preschool", "kindergarten", "day care", "daycare", "admissions", "early years", "children", "childcare", "campus", ".edu"],
+    requireTerms: ["corporate", "company", "berhad", "bhd", "sdn bhd", "group", "hr", "human resources", "csr", "esg", "sustainability", "employee", "foundation", "bank", "airports", "plantation", "property", "telekom", "insurance", "logistics", "manufacturing"],
     sentSearchTerms: ["CSR", "ESG", "corporate", "team building", "employee engagement", "sustainability"],
   },
   "travel-outreach-finder": {
@@ -389,6 +391,34 @@ function fallbackReengagementDraftPlans({ candidates }) {
   }));
 }
 
+function plansForSelectedReengagementCandidates(plans, candidates) {
+  const selectedEmails = new Set(candidates.map((candidate) => cleanText(candidate.to).toLowerCase()));
+  const usablePlans = (Array.isArray(plans) ? plans : []).filter((plan) => {
+    const to = cleanText(plan && plan.to).toLowerCase();
+    return to && selectedEmails.has(to);
+  });
+
+  if (usablePlans.length >= candidates.length) return usablePlans;
+
+  const plannedEmails = new Set(usablePlans.map((plan) => cleanText(plan.to).toLowerCase()));
+  const missingCandidates = candidates.filter((candidate) => !plannedEmails.has(cleanText(candidate.to).toLowerCase()));
+  return [...usablePlans, ...fallbackReengagementDraftPlans({ candidates: missingCandidates })];
+}
+
+function plansForSelectedLeads(plans, profile, leads) {
+  const selectedEmails = new Set(leads.map((lead) => cleanText(lead.email).toLowerCase()));
+  const usablePlans = (Array.isArray(plans) ? plans : []).filter((plan) => {
+    const to = cleanText(plan && plan.to).toLowerCase();
+    return to && selectedEmails.has(to);
+  });
+
+  if (usablePlans.length >= leads.length) return usablePlans;
+
+  const plannedEmails = new Set(usablePlans.map((plan) => cleanText(plan.to).toLowerCase()));
+  const missingLeads = leads.filter((lead) => !plannedEmails.has(cleanText(lead.email).toLowerCase()));
+  return [...usablePlans, ...fallbackDraftPlans({ profile, leads: missingLeads })];
+}
+
 function extractJson(text, label) {
   const trimmed = cleanText(text);
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) return trimmed;
@@ -486,12 +516,14 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
     let plans;
     try {
       plans = await generateReengagementDraftPlans({ profile, candidates, runDate, limit: candidates.length });
+      plans = plansForSelectedReengagementCandidates(plans, candidates);
     } catch (error) {
       if (!isOpenAiQuotaError(error)) {
-        throw error;
+        skipped.push(`OpenAI re-engagement draft generation failed, so template drafts were used instead: ${summarizeError(error)}`);
+      } else {
+        skipped.push("OpenAI quota was exhausted, so simple template re-engagement drafts were created instead of AI-generated drafts.");
       }
       plans = fallbackReengagementDraftPlans({ candidates });
-      skipped.push("OpenAI quota was exhausted, so simple template re-engagement drafts were created instead of AI-generated drafts.");
     }
 
     const created = [];
@@ -521,7 +553,7 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
       }
     }
 
-    if (!created.length && plans.length) {
+    if (!created.length && candidates.length) {
       throw new Error(`No Gmail re-engagement drafts were created. ${skipped.slice(-3).join(" ")}`);
     }
 
@@ -585,12 +617,14 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
       runDate,
       limit: selectedLeads.length,
     });
+    plans = plansForSelectedLeads(plans, profile, selectedLeads);
   } catch (error) {
     if (!isOpenAiQuotaError(error)) {
-      throw error;
+      skipped.push(`OpenAI outreach draft generation failed, so template drafts were used instead: ${summarizeError(error)}`);
+    } else {
+      skipped.push("OpenAI quota was exhausted, so CRM-based template drafts were created instead of AI-generated drafts.");
     }
     plans = fallbackDraftPlans({ profile, leads: selectedLeads });
-    skipped.push("OpenAI quota was exhausted, so CRM-based template drafts were created instead of AI-generated drafts.");
   }
 
   const created = [];
@@ -621,7 +655,7 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
     }
   }
 
-  if (!created.length && plans.length) {
+  if (!created.length && selectedLeads.length) {
     throw new Error(`No Gmail drafts were created. ${skipped.slice(-3).join(" ")}`);
   }
 
