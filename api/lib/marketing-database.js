@@ -544,11 +544,10 @@ function normalizeColdEmailLead(row, runDate) {
     .toLowerCase()
     .replace(/^www\./, "");
   const emailDomain = cleanedEmail.includes("@") ? cleanedEmail.split("@")[1] : "";
-  const looksLikeFreeInbox = /(gmail|yahoo|hotmail|outlook|icloud|aol|proton)\./i.test(emailDomain);
   const looksGenericRole = /^(info|hello|contact|enquiry|inquiry|admissions|admission|hr|careers|jobs|corporate|csr|esg|team|office|admin|partnerships?|media|marketing|sales|support|reservations?)@/i.test(cleanedEmail);
   const websiteMatchesEmailDomain = websiteHost && emailDomain && (emailDomain === websiteHost || emailDomain.endsWith(`.${websiteHost}`) || websiteHost.endsWith(`.${emailDomain}`));
   const emailHasEvidence = cleanedEmail && evidenceText.includes(cleanedEmail);
-  const safeEmail = isValidEmail(cleanedEmail) && (emailHasEvidence || (websiteMatchesEmailDomain && looksGenericRole)) && !looksLikeFreeInbox
+  const safeEmail = isValidEmail(cleanedEmail) && (emailHasEvidence || (websiteMatchesEmailDomain && looksGenericRole))
     ? cleanedEmail
     : null;
   const sourceValues = uniqueStrings([
