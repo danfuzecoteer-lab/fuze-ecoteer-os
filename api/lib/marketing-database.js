@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { insertRows, upsertRows } = require("./supabase-admin");
+const { insertRows, selectRows, upsertRows } = require("./supabase-admin");
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -19,6 +19,77 @@ function extractJson(text, label) {
   const last = trimmed.lastIndexOf("]");
   if (first >= 0 && last > first) return trimmed.slice(first, last + 1);
   throw new Error(`No JSON array found in ${label} response`);
+}
+
+function extractTopLevelJsonObjects(candidate) {
+  const text = cleanText(candidate);
+  const objects = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(text.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function tryParseJson(candidate) {
+  try {
+    return JSON.parse(candidate);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function parseJsonRows(text, label) {
+  const candidate = extractJson(text, label);
+  const direct = tryParseJson(candidate);
+  if (Array.isArray(direct)) return direct;
+  if (direct && Array.isArray(direct.rows)) return direct.rows;
+
+  const repaired = [];
+  for (const chunk of extractTopLevelJsonObjects(candidate)) {
+    const parsed = tryParseJson(chunk);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      repaired.push(parsed);
+    }
+  }
+
+  if (repaired.length) return repaired;
+  throw new Error(`Could not parse usable JSON rows from ${label} response`);
 }
 
 function cleanText(value) {
@@ -60,22 +131,63 @@ function normalizeBriefPrompt(brief, { runDate, limit }) {
     .trim();
 }
 
-function buildColdEmailSegmentPlan(limit) {
-  const segments = [
-    "School",
-    "Tadika / Preschool",
-    "University",
-    "Corporate HR / CSR",
-    "Network / Referral Partner",
-  ];
-  const safeLimit = Math.max(1, Number(limit) || 0);
-  const base = Math.floor(safeLimit / segments.length);
-  let remainder = safeLimit % segments.length;
-  return segments.map((segment) => {
-    const count = base + (remainder > 0 ? 1 : 0);
-    if (remainder > 0) remainder -= 1;
-    return { segment, count };
-  }).filter((item) => item.count > 0);
+const CRM_SEGMENTS = [
+  "School",
+  "Tadika / Preschool",
+  "University",
+  "Corporate HR / CSR",
+  "Network / Referral Partner",
+];
+
+const CRM_SEGMENT_TARGET_DEFAULTS = {
+  "School": 5000,
+  "Tadika / Preschool": 5000,
+  "University": 2500,
+  "Corporate HR / CSR": 5000,
+  "Network / Referral Partner": 5000,
+};
+
+const CRM_BATCH_SIZE = Math.max(10, Math.min(60, Number(process.env.CRM_BATCH_SIZE || 30) || 30));
+
+function crmSegmentTargets() {
+  return {
+    "School": Math.max(0, Number(process.env.CRM_TARGET_SCHOOLS || CRM_SEGMENT_TARGET_DEFAULTS["School"]) || 0),
+    "Tadika / Preschool": Math.max(0, Number(process.env.CRM_TARGET_PRESCHOOLS || CRM_SEGMENT_TARGET_DEFAULTS["Tadika / Preschool"]) || 0),
+    "University": Math.max(0, Number(process.env.CRM_TARGET_UNIVERSITIES || CRM_SEGMENT_TARGET_DEFAULTS["University"]) || 0),
+    "Corporate HR / CSR": Math.max(0, Number(process.env.CRM_TARGET_CORPORATES || CRM_SEGMENT_TARGET_DEFAULTS["Corporate HR / CSR"]) || 0),
+    "Network / Referral Partner": Math.max(0, Number(process.env.CRM_TARGET_TRAVEL || CRM_SEGMENT_TARGET_DEFAULTS["Network / Referral Partner"]) || 0),
+  };
+}
+
+function buildColdEmailSegmentPlan({ existingCounts = {}, maxNewRows = 0 }) {
+  const safeLimit = Math.max(0, Number(maxNewRows) || 0);
+  const targets = crmSegmentTargets();
+  const deficits = CRM_SEGMENTS
+    .map((segment) => ({
+      segment,
+      remaining: Math.max(0, Number(targets[segment] || 0) - Number(existingCounts[segment] || 0)),
+    }))
+    .filter((item) => item.remaining > 0);
+
+  if (!deficits.length || safeLimit <= 0) {
+    return [];
+  }
+
+  const plan = deficits.map((item) => ({ segment: item.segment, count: 0 }));
+  let remainingBudget = safeLimit;
+  while (remainingBudget > 0) {
+    const open = deficits.filter((item) => item.remaining > 0);
+    if (!open.length) break;
+    for (const item of open) {
+      if (remainingBudget <= 0) break;
+      item.remaining -= 1;
+      remainingBudget -= 1;
+      const target = plan.find((entry) => entry.segment === item.segment);
+      target.count += 1;
+    }
+  }
+
+  return plan.filter((item) => item.count > 0);
 }
 
 function segmentSpecificPrompt(segment) {
@@ -254,7 +366,291 @@ const TRAVEL_REFERRAL_SEEDS = [
     source: "Seeded official website benchmark for volunteer travel platform",
     recommended_offer: "PTP, PMRS, or PEEP collaboration",
   },
+  {
+    organisation_name: "Volunteer World",
+    country: "Germany",
+    city: null,
+    website: "https://www.volunteerworld.com/",
+    source: "Seeded official website benchmark for volunteer travel directory",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Go Overseas",
+    country: "United States",
+    city: null,
+    website: "https://www.gooverseas.com/",
+    source: "Seeded official website benchmark for travel and gap-year directory",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Love Volunteers",
+    country: "New Zealand",
+    city: null,
+    website: "https://www.lovevolunteers.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Maximo Nivel",
+    country: "United States",
+    city: null,
+    website: "https://maximonivel.com/",
+    source: "Seeded official website benchmark for travel and volunteering platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Plan My Gap Year",
+    country: "New Zealand",
+    city: null,
+    website: "https://www.planmygapyear.co.uk/",
+    source: "Seeded official website benchmark for gap-year and volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Frontier",
+    country: "United Kingdom",
+    city: null,
+    website: "https://www.frontiergap.com/",
+    source: "Seeded official website benchmark for gap-year and conservation travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Global Nomadic",
+    country: "United Kingdom",
+    city: null,
+    website: "https://globalnomadic.com/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Oyster Worldwide",
+    country: "United Kingdom",
+    city: null,
+    website: "https://www.oysterworldwide.com/",
+    source: "Seeded official website benchmark for gap-year and volunteering platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Grassroots Volunteering",
+    country: "International",
+    city: null,
+    website: "https://www.grassrootsvolunteering.org/",
+    source: "Seeded official website benchmark for volunteer travel directory",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Idealist",
+    country: "United States",
+    city: null,
+    website: "https://www.idealist.org/",
+    source: "Seeded official website benchmark for mission-driven opportunities directory",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Year Out Group",
+    country: "United Kingdom",
+    city: null,
+    website: "https://yearoutgroup.org/",
+    source: "Seeded official website benchmark for gap-year referral network",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Volunteer Forever",
+    country: "United States",
+    city: null,
+    website: "https://www.volunteerforever.com/",
+    source: "Seeded official website benchmark for volunteer travel publisher",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Transitions Abroad",
+    country: "United States",
+    city: null,
+    website: "https://transitionsabroad.com/",
+    source: "Seeded official website benchmark for meaningful travel publisher",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Responsible Travel",
+    country: "United Kingdom",
+    city: null,
+    website: "https://www.responsibletravel.com/",
+    source: "Seeded official website benchmark for responsible tourism publisher",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Travel Massive",
+    country: "International",
+    city: null,
+    website: "https://www.travelmassive.com/",
+    source: "Seeded official website benchmark for travel industry network",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Adventure Travel Trade Association",
+    country: "United States",
+    city: null,
+    website: "https://www.adventuretravel.biz/",
+    source: "Seeded official website benchmark for adventure travel network",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "TourRadar",
+    country: "Austria",
+    city: null,
+    website: "https://www.tourradar.com/",
+    source: "Seeded official website benchmark for tour marketplace",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Bookmundi",
+    country: "Denmark",
+    city: null,
+    website: "https://www.bookmundi.com/",
+    source: "Seeded official website benchmark for travel marketplace",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Evaneos",
+    country: "France",
+    city: null,
+    website: "https://www.evaneos.com/",
+    source: "Seeded official website benchmark for responsible travel marketplace",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "TourHero",
+    country: "International",
+    city: null,
+    website: "https://www.tourhero.com/",
+    source: "Seeded official website benchmark for creator-led travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Volunteer Latin America",
+    country: "International",
+    city: null,
+    website: "https://www.volunteerlatinamerica.com/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Working Traveller",
+    country: "International",
+    city: null,
+    website: "https://www.workingtraveller.com/",
+    source: "Seeded official website benchmark for travel opportunity platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Conservation Travel Africa",
+    country: "South Africa",
+    city: null,
+    website: "https://www.conservationtravelafrica.org/",
+    source: "Seeded official website benchmark for conservation travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "VolunteerBase",
+    country: "International",
+    city: null,
+    website: "https://www.volunteerbase.com/",
+    source: "Seeded official website benchmark for volunteering directory",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Go Volunteer Africa",
+    country: "Uganda",
+    city: null,
+    website: "https://www.govolunteerafrica.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Volunteer Southern Africa",
+    country: "South Africa",
+    city: null,
+    website: "https://www.volunteersouthernafrica.org/",
+    source: "Seeded official website benchmark for volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Volunteer Eco Students Abroad",
+    country: "United States",
+    city: null,
+    website: "https://www.volunteereco.org/",
+    source: "Seeded official website benchmark for eco-volunteer travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Greenloons",
+    country: "United States",
+    city: null,
+    website: "https://www.greenloons.com/",
+    source: "Seeded official website benchmark for responsible travel platform",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
+  {
+    organisation_name: "Volunteer Travellers",
+    country: "International",
+    city: null,
+    website: "https://www.volunteertravellers.com/",
+    source: "Seeded official website benchmark for volunteer travel publisher",
+    recommended_offer: "PTP, PMRS, or PEEP collaboration",
+  },
 ];
+
+function dedupeRowsByKey(rows) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = [
+      cleanText(row.lead_segment).toLowerCase(),
+      cleanText(row.organisation_name).toLowerCase(),
+      cleanText(row.country).toLowerCase(),
+    ].join("|");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchExistingColdEmailLeadsSnapshot() {
+  const rows = await selectAllColdEmailLeadRows();
+  const counts = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, 0]));
+  const existingNames = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, new Set()]));
+
+  for (const row of rows) {
+    const segment = cleanText(row.lead_segment);
+    if (!counts[segment] && counts[segment] !== 0) continue;
+    counts[segment] += 1;
+    const name = cleanText(row.organisation_name);
+    if (name) existingNames[segment].add(name);
+  }
+
+  return {
+    rows,
+    counts,
+    existingNames: Object.fromEntries(
+      Object.entries(existingNames).map(([segment, names]) => [segment, [...names]])
+    ),
+  };
+}
+
+async function selectAllColdEmailLeadRows() {
+  return selectRows("marketing_cold_email_leads", [
+    ["select", "lead_segment,organisation_name,country,email,last_drafted_at,status"],
+    ["limit", "30000"],
+  ]);
+}
+
+function existingOrgPrompt(existingNames = [], maxNames = 120) {
+  const names = existingNames
+    .map((name) => cleanText(name))
+    .filter(Boolean)
+    .slice(0, maxNames);
+  if (!names.length) return "";
+  return `Do not return these organisations because they are already in the CRM: ${names.join("; ")}.`;
+}
 
 function combinedLeadText(row) {
   return [
@@ -459,10 +855,7 @@ async function generateJsonRows({ system, prompt, label, maxOutputTokens = 4000 
     .map((content) => content.text)
     .join("\n");
 
-  const parsed = JSON.parse(extractJson(text, label));
-  if (Array.isArray(parsed)) return parsed;
-  if (Array.isArray(parsed.rows)) return parsed.rows;
-  throw new Error(`${label} JSON was not an array`);
+  return parseJsonRows(text, label);
 }
 
 function fallbackMarketingResearchRows(runDate) {
@@ -562,125 +955,57 @@ function fallbackMarketingResearchRows(runDate) {
       source: "https://seatru.umt.edu.my/volunteer-registration-2/",
       strength: "University-linked turtle conservation credibility",
       risk: "Strong trust signal for turtle-specific volunteer searches",
-      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly on one dedicated page",
-      current_score: 74,
-      rating_band: "Moderate competitor",
-      trend: "Strong competitor",
-      active_marketing_score: 20,
+      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly",
+      current_score: 76,
+      rating_band: "Strong competitor",
+      trend: "Benchmark leader",
+      active_marketing_score: 22,
       momentum_score: 7,
-      threat_level: "Medium",
+      threat_level: "High",
       website_score: 11,
-      social_score: 7,
-      seo_aeo_score: 13,
+      social_score: 6,
+      seo_aeo_score: 15,
       youtube_score: 4,
-      cost_value_score: 6,
+      cost_value_score: 7,
       logistics_score: 6,
       trust_score: 7,
       strategic_learning_score: 4,
       most_active_channel: "Website",
-      main_campaign_theme: "Turtle volunteering",
-      keyword_notes: "Track turtle conservation volunteer Malaysia, sea turtle volunteering Malaysia",
-      aeo_notes: "Compare answers on seasonality, duties, accommodation, joining steps and impact",
-      backlink_notes: "Review university and conservation backlinks",
+      main_campaign_theme: "Turtle conservation volunteering",
+      keyword_notes: "Track turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer Malaysia",
+      aeo_notes: "Compare direct answers on turtle season, volunteer duties, cost, dates and how to apply",
+      backlink_notes: "University authority is a strong trust signal",
       social_notes: "Check public social activity weekly",
       website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
       evidence_links: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      what_we_can_learn: "University credibility is a strong trust signal for turtle programmes",
-      how_we_are_better: "FE can show a more rounded guest journey if logistics and outcomes are clearer",
-      recommended_action: "Tighten FE turtle project landing page and FAQs",
+      what_we_can_learn: "Academic and conservation credibility reduces buyer anxiety",
+      how_we_are_better: "FE can package conservation with broader island experience and school/corporate pathways",
+      recommended_action: "Add stronger turtle volunteering FAQs and evidence of impact on the FE app/site",
       confidence: 0.55,
     },
     {
       research_type: "Price Comparison",
-      organisation: "Market benchmark",
+      organisation: "Fuze Ecoteer",
       offer: "Turtle Volunteer project",
-      visible_price: "Research needed",
+      visible_price: "Use current FE fees",
       country: "Malaysia",
-      target_market: "Volunteers and conservation travellers",
+      location: "Perhentian / Malaysia",
+      target_market: "Volunteers, schools, corporates",
       category: "Turtle Volunteer project",
-      source: "Search phrases: sea turtle volunteering Malaysia, turtle conservation volunteer Southeast Asia",
-      strength: "Turtle conservation remains a strong specialist hook",
-      risk: "Competitors can own turtle-specific search intent if FE copy is vague",
-      fe_response: "Create one clear FE turtle volunteering comparison block with season, duties and inclusions",
-      current_score: 64,
+      source: "Internal FE pricing and website review",
+      strength: "Authentic conservation and local delivery",
+      risk: "Value is harder to compare if price, inclusions and proof are unclear",
+      fe_response: "Make pricing, inclusions, impact and next step clearer",
+      current_score: 68,
       rating_band: "Moderate competitor",
       trend: "Opportunity to beat",
-      active_marketing_score: 16,
-      momentum_score: 5,
-      threat_level: "Medium",
-      keyword_notes: "turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer",
-      aeo_notes: "Answer cost, timing, accommodation, activities, safety and impact directly",
-      recommended_action: "Build an FE turtle volunteering page with stronger search intent coverage",
+      active_marketing_score: 22,
+      momentum_score: 8,
+      threat_level: "Internal opportunity",
+      what_we_can_learn: "Price rows need exact inclusions and proof, not just a number",
+      how_we_are_better: "FE has direct project credibility and can show real outcomes",
+      recommended_action: "Create one price comparison block per FE product type",
       confidence: 0.5,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "Diving volunteer project",
-      visible_price: "Research needed",
-      country: "Malaysia / Southeast Asia",
-      target_market: "Divers and marine conservation volunteers",
-      category: "Diving volunteer project",
-      source: "Search phrases: scuba diving volunteer Malaysia, marine conservation diving volunteer Southeast Asia",
-      strength: "Diving plus conservation is commercially strong if clearly packaged",
-      risk: "Specialist dive competitors can look easier to understand",
-      fe_response: "Clarify FE marine research and diving-adjacent value propositions on site",
-      current_score: 63,
-      rating_band: "Moderate competitor",
-      trend: "Needs review",
-      active_marketing_score: 18,
-      momentum_score: 6,
-      threat_level: "Medium",
-      keyword_notes: "scuba diving volunteer Malaysia, marine conservation diving, coral reef restoration volunteer",
-      aeo_notes: "Answer dive certification, survey work, accommodation and safety",
-      recommended_action: "Split diving-related offers into a dedicated FE comparison block",
-      confidence: 0.5,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "3d2n eco package",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      target_market: "Domestic travellers, families, schools and corporate groups",
-      category: "3d2n eco package",
-      source: "Search phrases: eco package Malaysia 3d2n, island eco experience Malaysia",
-      strength: "Short-stay eco packages are easier to sell when logistics and inclusions are clear",
-      risk: "Travel operators with clearer package pages can outrank and outconvert FE",
-      fe_response: "Create one concise 3d2n eco package page with inclusions, timings and CTA",
-      current_score: 58,
-      rating_band: "Weak online presence",
-      trend: "Opportunity to beat",
-      active_marketing_score: 12,
-      momentum_score: 4,
-      threat_level: "Medium",
-      keyword_notes: "3d2n eco package Malaysia, island eco package, conservation stay Malaysia",
-      aeo_notes: "Answer who it is for, inclusions, exclusions, transport and booking steps",
-      recommended_action: "Turn FE short eco package into a clearly priced landing page",
-      confidence: 0.5,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "Turtle necklace",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      target_market: "Supporters, travellers and gift buyers",
-      category: "Turtle necklace",
-      source: "Search phrases: turtle conservation necklace Malaysia, eco jewellery turtle",
-      strength: "Small donation-linked products can convert if story and mission are clear",
-      risk: "Product pages without story or proof are easy to ignore",
-      fe_response: "Frame product with impact story, imagery and simple add-to-cart path",
-      current_score: 46,
-      rating_band: "Weak online presence",
-      trend: "Needs review",
-      active_marketing_score: 10,
-      momentum_score: 3,
-      threat_level: "Low",
-      keyword_notes: "turtle necklace Malaysia, eco jewellery turtle, conservation gift turtle",
-      aeo_notes: "Answer material, cause, price and shipping simply",
-      recommended_action: "Create a tighter product page or remove it from priority outreach until ready",
-      confidence: 0.45,
     },
     {
       research_type: "Price Comparison",
@@ -1015,47 +1340,73 @@ async function updateMarketingResearchDatabase({ runDate, limit = 40, dryRun = f
   return { rows: normalized, saved, snapshots, evidence, warning };
 }
 
-async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false } = {}) {
+async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = false } = {}) {
   const brief = readAutomationBrief("cold-email-crm");
   const briefPrompt = normalizeBriefPrompt(brief, { runDate, limit });
-  const plan = buildColdEmailSegmentPlan(limit);
+  const existingSnapshot = await fetchExistingColdEmailLeadsSnapshot();
+  const targets = crmSegmentTargets();
+  const plan = buildColdEmailSegmentPlan({
+    existingCounts: existingSnapshot.counts,
+    maxNewRows: limit,
+  });
   const rows = [];
   const warnings = [];
 
+  if (!plan.length) {
+    return {
+      rows: [],
+      saved: [],
+      warning: "CRM segment targets already met; no new rows were generated.",
+      existingCounts: existingSnapshot.counts,
+      targets,
+    };
+  }
+
   for (const item of plan) {
-    try {
-      const segmentRows = await generateJsonRows({
-        label: `cold email CRM ${item.segment}`,
-        maxOutputTokens: 5000,
-        system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
-        prompt: [
-          briefPrompt || [
-            `Run date: ${runDate}.`,
-            `Create CRM prospect rows for Fuze Ecoteer.`,
-            "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
-          ].join("\n"),
-          "",
-          `For this pass, return exactly ${item.count} rows for lead_segment: ${item.segment}.`,
-          `Every returned row must have lead_segment exactly set to: ${item.segment}.`,
-          segmentSpecificPrompt(item.segment),
-          "Return a JSON array. Do not include markdown or commentary.",
-        ].join("\n"),
-      });
-      rows.push(...segmentRows);
-    } catch (error) {
-      warnings.push(`Segment ${item.segment} failed: ${error.message}`);
+    let remainingForSegment = item.count;
+    let batchNumber = 0;
+    while (remainingForSegment > 0) {
+      const batchSize = Math.min(CRM_BATCH_SIZE, remainingForSegment);
+      batchNumber += 1;
+      try {
+        const segmentRows = await generateJsonRows({
+          label: `cold email CRM ${item.segment} batch ${batchNumber}`,
+          maxOutputTokens: 7000,
+          system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
+          prompt: [
+            briefPrompt || [
+              `Run date: ${runDate}.`,
+              "Create CRM prospect rows for Fuze Ecoteer.",
+              "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
+            ].join("\n"),
+            "",
+            `For this pass, return exactly ${batchSize} rows for lead_segment: ${item.segment}.`,
+            `This is batch ${batchNumber} for ${item.segment}. Segment target: ${targets[item.segment] || 0}. Existing CRM count in this segment: ${existingSnapshot.counts[item.segment] || 0}. Planned new rows for this run in this segment: ${item.count}.`,
+            `Every returned row must have lead_segment exactly set to: ${item.segment}.`,
+            segmentSpecificPrompt(item.segment),
+            existingOrgPrompt(existingSnapshot.existingNames[item.segment]),
+            "Return a JSON array only. Do not include markdown, code fences, comments, or commentary.",
+            "Keep string fields short and stable. Avoid long paragraphs and keep each string field under 120 characters where possible.",
+            "If you cannot verify a public email, set email to null. Never invent or guess an email address.",
+          ].filter(Boolean).join("\n"),
+        });
+        rows.push(...segmentRows);
+      } catch (error) {
+        warnings.push(`Segment ${item.segment} batch ${batchNumber} failed: ${error.message}`);
+      }
+      remainingForSegment -= batchSize;
     }
   }
 
-  const normalized = rows
+  const normalized = dedupeRowsByKey(rows
     .map((row) => normalizeColdEmailLead(row, runDate))
-    .filter((row) => row && row.organisation_name);
+    .filter((row) => row && row.organisation_name));
 
   const currentTravelCount = normalized.filter((row) => row.lead_segment === "Network / Referral Partner").length;
   const travelPlan = plan.find((item) => item.segment === "Network / Referral Partner");
   const neededTravelCount = travelPlan ? travelPlan.count : 0;
   if (currentTravelCount < neededTravelCount) {
-    const fallbackRows = await buildTravelReferralFallbackRows(runDate, neededTravelCount - currentTravelCount);
+    const fallbackRows = await buildTravelReferralFallbackRows(runDate, neededCount - currentTravelCount);
     const normalizedFallback = fallbackRows
       .map((row) => normalizeColdEmailLead(row, runDate))
       .filter((row) => row && row.organisation_name);
@@ -1063,9 +1414,25 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false 
     warnings.push(`Travel fallback added ${normalizedFallback.length} seeded referral lead(s) because only ${currentTravelCount} travel rows were generated.`);
   }
 
-  if (dryRun) return { rows: normalized, saved: [], warning: warnings.join(" | ") || null };
+  if (dryRun) {
+    return {
+      rows: normalized,
+      saved: [],
+      warning: warnings.join(" | ") || null,
+      existingCounts: existingSnapshot.counts,
+      targets,
+      plan,
+    };
+  }
   const saved = await upsertRows("marketing_cold_email_leads", normalized, "lead_segment,organisation_name,country");
-  return { rows: normalized, saved, warning: warnings.join(" | ") || null };
+  return {
+    rows: normalized,
+    saved,
+    warning: warnings.join(" | ") || null,
+    existingCounts: existingSnapshot.counts,
+    targets,
+    plan,
+  };
 }
 
 module.exports = {
