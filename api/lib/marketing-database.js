@@ -55,6 +55,135 @@ function normalizeBriefPrompt(brief, { runDate, limit }) {
     .trim();
 }
 
+function buildColdEmailSegmentPlan(limit) {
+  const segments = [
+    "School",
+    "Tadika / Preschool",
+    "University",
+    "Corporate HR / CSR",
+    "Network / Referral Partner",
+  ];
+  const safeLimit = Math.max(1, Number(limit) || 0);
+  const base = Math.floor(safeLimit / segments.length);
+  let remainder = safeLimit % segments.length;
+  return segments.map((segment) => {
+    const count = base + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder -= 1;
+    return { segment, count };
+  }).filter((item) => item.count > 0);
+}
+
+function segmentSpecificPrompt(segment) {
+  if (segment === "Network / Referral Partner") {
+    return [
+      "Return only travel, tourism, volunteer-travel, referral, publisher, influencer, media, collaboration or partnership leads.",
+      "Do not include schools, universities, taska, tadika, daycare centres, preschools, education groups, or corporate HR / CSR leads.",
+      "Prioritize real travel websites, travel agencies, volunteer travel platforms, gap-year companies, travel media, travel blogs, responsible tourism sites, eco-tourism directories, and collaboration partners that can promote PTP, PMRS and PEEP.",
+      "If you cannot find a public email, still return the lead with email set to null.",
+    ].join(" ");
+  }
+  if (segment === "Corporate HR / CSR") {
+    return "Return only real corporate, CSR, ESG, HR, sustainability, foundation, or employee-engagement leads. Do not include schools, universities, or preschools.";
+  }
+  if (segment === "University") {
+    return "Return only universities, colleges, faculties, departments, study-abroad offices, research groups, or higher-education programmes.";
+  }
+  if (segment === "Tadika / Preschool") {
+    return "Return only preschools, taska, tadika, kindergartens, early-years centres, or daycare groups.";
+  }
+  return "Return only schools and school-group leads. Do not include universities, preschools, or corporates.";
+}
+
+const TRAVEL_REFERRAL_TERMS = [
+  "travel",
+  "tour",
+  "tourism",
+  "tour operator",
+  "travel agency",
+  "travel agent",
+  "volunteer travel",
+  "volunteer abroad",
+  "gap year",
+  "gap-year",
+  "career break",
+  "responsible tourism",
+  "responsible travel",
+  "eco tourism",
+  "ecotourism",
+  "adventure travel",
+  "adventure",
+  "expedition",
+  "backpacker",
+  "publisher",
+  "media",
+  "magazine",
+  "blog",
+  "travel blog",
+  "directory",
+  "referral partner",
+  "collaboration partner",
+  "influencer",
+];
+
+const EDUCATION_TERMS = [
+  "school",
+  "university",
+  "college",
+  "faculty",
+  "campus",
+  "tadika",
+  "taska",
+  "preschool",
+  "kindergarten",
+  "day care",
+  "daycare",
+  "admissions",
+  ".edu",
+];
+
+const CORPORATE_TERMS = [
+  "berhad",
+  "bhd",
+  "sdn bhd",
+  "corporation",
+  "corp",
+  "group",
+  "holdings",
+  "foundation",
+  "csr",
+  "esg",
+  "hr",
+  "human resources",
+  "sustainability",
+  "employee engagement",
+];
+
+function combinedLeadText(row) {
+  return [
+    cleanText(row.lead_segment || row.segment || row.type),
+    cleanText(row.organisation_name || row.organisation || row.company || row.school || row.name),
+    cleanText(row.country),
+    cleanText(row.city || row.location),
+    cleanText(row.website || row.url || row.link),
+    cleanText(row.contact_department || row.department),
+    cleanText(row.contact_name || row.contact),
+    cleanText(row.research_notes || row.notes || row.background),
+    cleanText(row.likely_need || row.need),
+    cleanText(row.recommended_offer || row.offer),
+    cleanText(row.personalization_angle || row.angle),
+    cleanText(row.source),
+  ].join(" ").toLowerCase();
+}
+
+function includesAny(text, terms) {
+  return terms.some((term) => text.includes(String(term).toLowerCase()));
+}
+
+function isTravelReferralLead(row) {
+  const text = combinedLeadText(row);
+  return includesAny(text, TRAVEL_REFERRAL_TERMS) && !includesAny(text, EDUCATION_TERMS) && !includesAny(text, CORPORATE_TERMS);
+}
+
 function cleanConfidence(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -497,35 +626,19 @@ async function insertOptional(table, rows) {
 function normalizeColdEmailLead(row, runDate) {
   const rawSegment = cleanText(row.lead_segment || row.segment || row.type);
   const lowerSegment = rawSegment.toLowerCase();
-  const travelReferralTerms = [
+  const segmentHintTravelTerms = [
     "network",
     "referral",
     "partner",
     "chamber",
     "association",
-    "travel",
-    "tour",
-    "tourism",
-    "agent",
-    "gap",
-    "volunteer abroad",
-    "career break",
-    "influencer",
-    "media",
-    "blog",
-    "publisher",
-    "magazine",
-    "adventure",
-    "ecotourism",
-    "eco tourism",
-    "responsible tourism",
-    "collaboration",
+    ...TRAVEL_REFERRAL_TERMS,
   ];
   const segment = lowerSegment.includes("corporate") || lowerSegment.includes("csr") || lowerSegment.includes("esg")
     ? "Corporate HR / CSR"
     : lowerSegment.includes("university") || lowerSegment.includes("college") || lowerSegment.includes("faculty")
       ? "University"
-      : travelReferralTerms.some((term) => lowerSegment.includes(term))
+      : segmentHintTravelTerms.some((term) => lowerSegment.includes(term))
         ? "Network / Referral Partner"
         : lowerSegment.includes("day") || lowerSegment.includes("tadika") || lowerSegment.includes("taska") || lowerSegment.includes("preschool") || lowerSegment.includes("kindergarten")
           ? "Tadika / Preschool"
@@ -554,6 +667,15 @@ function normalizeColdEmailLead(row, runDate) {
     cleanText(row.source || row.website || row.url || row.link) || null,
     safeEmail ? `public email verified: ${safeEmail}` : null,
   ]);
+
+  if (segment === "Network / Referral Partner" && !isTravelReferralLead({
+    ...row,
+    lead_segment: segment,
+    email: safeEmail,
+    source: sourceValues.join(" | ") || cleanText(row.source || row.website || row.url || row.link),
+  })) {
+    return null;
+  }
 
   return {
     lead_segment: segment,
@@ -619,34 +741,41 @@ async function updateMarketingResearchDatabase({ runDate, limit = 40, dryRun = f
 async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false } = {}) {
   const brief = readAutomationBrief("cold-email-crm");
   const briefPrompt = normalizeBriefPrompt(brief, { runDate, limit });
-  const rows = await generateJsonRows({
-    label: "cold email CRM",
-    maxOutputTokens: 12000,
-    system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
-    prompt: briefPrompt || [
-      `Run date: ${runDate}.`,
-      `Create up to ${limit} cold-email CRM prospect rows for Fuze Ecoteer.`,
-      "Return a balanced weekly set across five lead groups: School, Tadika / Preschool, University, Corporate HR / CSR, and Network / Referral Partner.",
-      "If the requested limit is 100 or more, return 20 leads per group. If the requested limit is lower, keep the mix balanced across the five groups.",
-      "For Network / Referral Partner, prioritize travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers, travel bloggers, eco-tourism directories, responsible travel publishers and collaboration/referral partners for PTP, PMRS and PEEP.",
-      "At least half of Network / Referral Partner leads must be travel/referral outlets, not schools, universities, taska, tadika, day-care, preschool or general education providers.",
-      "Use lead_segment exactly Network / Referral Partner for travel websites, travel agents, tourism platforms, volunteer travel sites, travel media, influencers, publishers and referral partners.",
-      "Do deep enough research notes that a later email-writing bot can write a specific personalised cold email, but do not write the outreach email.",
-      "Return a JSON array. Each item must use these keys:",
-      "lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, linkedin_url, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
-      "lead_segment must be exactly one of: School, Tadika / Preschool, University, Corporate HR / CSR, Network / Referral Partner.",
-      "priority must include a score and band, for example Priority A - 92/100, Priority B - 81/100, Priority C - 67/100, Nurture - 54/100, or Low priority - 35/100.",
-      "research_notes must include evidence of fit, recent activity, LinkedIn/social summary, likely decision-maker, buyer motivation, pain point, timing, caution/uncertainty and source URLs.",
-      "personalization_angle must be a concise hook for the future email-writing agent, not outreach copy.",
-      "confidence must be 0 to 1. Use null when a contact email is not confidently known.",
-      "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
-    ].join("\n"),
-  });
+  const plan = buildColdEmailSegmentPlan(limit);
+  const rows = [];
+  const warnings = [];
 
-  const normalized = rows.map((row) => normalizeColdEmailLead(row, runDate)).filter((row) => row.organisation_name);
-  if (dryRun) return { rows: normalized, saved: [] };
+  for (const item of plan) {
+    try {
+      const segmentRows = await generateJsonRows({
+        label: `cold email CRM ${item.segment}`,
+        maxOutputTokens: 5000,
+        system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
+        prompt: [
+          briefPrompt || [
+            `Run date: ${runDate}.`,
+            `Create CRM prospect rows for Fuze Ecoteer.`,
+            "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
+          ].join("\n"),
+          "",
+          `For this pass, return exactly ${item.count} rows for lead_segment: ${item.segment}.`,
+          `Every returned row must have lead_segment exactly set to: ${item.segment}.`,
+          segmentSpecificPrompt(item.segment),
+          "Return a JSON array. Do not include markdown or commentary.",
+        ].join("\n"),
+      });
+      rows.push(...segmentRows);
+    } catch (error) {
+      warnings.push(`Segment ${item.segment} failed: ${error.message}`);
+    }
+  }
+
+  const normalized = rows
+    .map((row) => normalizeColdEmailLead(row, runDate))
+    .filter((row) => row && row.organisation_name);
+  if (dryRun) return { rows: normalized, saved: [], warning: warnings.join(" | ") || null };
   const saved = await upsertRows("marketing_cold_email_leads", normalized, "lead_segment,organisation_name,country");
-  return { rows: normalized, saved };
+  return { rows: normalized, saved, warning: warnings.join(" | ") || null };
 }
 
 module.exports = {
