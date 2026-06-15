@@ -467,8 +467,8 @@ async function loadOutreachContext() {
   const [leads, researchRows] = await Promise.all([
     selectRows("marketing_cold_email_leads", [
       ["select", "id,lead_segment,organisation_name,country,city,website,contact_department,contact_name,email,linkedin_url,research_notes,likely_need,recommended_offer,personalization_angle,priority,status,next_action,source,confidence,run_date,last_seen_at,last_drafted_at,last_drafted_by_agent,last_draft_id,last_draft_message_id,draft_count"],
-      ["order", "last_seen_at.desc.nullslast"],
-      ["limit", "250"],
+      ["order", "last_drafted_at.asc.nullsfirst,last_seen_at.desc.nullslast"],
+      ["limit", "5000"],
     ]),
     selectRows("marketing_research_rows", [
       ["select", "research_type,organisation,offer,visible_price,strength,risk,fe_response,target_market,category,source,confidence,country,location,current_score,trend,what_we_can_learn,how_we_are_better,recommended_action,run_date"],
