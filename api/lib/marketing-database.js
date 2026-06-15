@@ -70,7 +70,7 @@ function compactDetails(row) {
 }
 
 async function generateJsonRows({ system, prompt, label, maxOutputTokens = 4000 }) {
-  const model = process.env.OPENAI_MODEL || "gpt-5.4";
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 150000);
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -466,11 +466,40 @@ async function insertOptional(table, rows) {
 
 function normalizeColdEmailLead(row, runDate) {
   const rawSegment = cleanText(row.lead_segment || row.segment || row.type);
-  const segment = rawSegment.toLowerCase().includes("corporate")
+  const lowerSegment = rawSegment.toLowerCase();
+  const travelReferralTerms = [
+    "network",
+    "referral",
+    "partner",
+    "chamber",
+    "association",
+    "travel",
+    "tour",
+    "tourism",
+    "agent",
+    "gap",
+    "volunteer abroad",
+    "career break",
+    "influencer",
+    "media",
+    "blog",
+    "publisher",
+    "magazine",
+    "adventure",
+    "ecotourism",
+    "eco tourism",
+    "responsible tourism",
+    "collaboration",
+  ];
+  const segment = lowerSegment.includes("corporate") || lowerSegment.includes("csr") || lowerSegment.includes("esg")
     ? "Corporate HR / CSR"
-    : rawSegment.toLowerCase().includes("day") || rawSegment.toLowerCase().includes("tadika") || rawSegment.toLowerCase().includes("taska")
-      ? "Day care / Tadika / Taska"
-      : "School";
+    : lowerSegment.includes("university") || lowerSegment.includes("college") || lowerSegment.includes("faculty")
+      ? "University"
+      : travelReferralTerms.some((term) => lowerSegment.includes(term))
+        ? "Network / Referral Partner"
+        : lowerSegment.includes("day") || lowerSegment.includes("tadika") || lowerSegment.includes("taska") || lowerSegment.includes("preschool") || lowerSegment.includes("kindergarten")
+          ? "Tadika / Preschool"
+          : "School";
 
   return {
     lead_segment: segment,
@@ -504,16 +533,16 @@ async function updateMarketingResearchDatabase({ runDate, limit = 40, dryRun = f
   try {
     rows = await generateJsonRows({
       label: "marketing research",
-      maxOutputTokens: 5000,
+      maxOutputTokens: 8000,
       system: "Return only valid JSON. Use public information only. Do not invent private contacts, private analytics, or unverifiable figures. If live evidence is uncertain, use source/search phrases and lower confidence.",
       prompt: [
         `Run date: ${runDate}.`,
-        `Create up to ${Math.min(limit, 18)} competitive intelligence rows for Fuze Ecoteer.`,
+        `Create up to ${Math.min(limit, 8)} compact competitive intelligence rows for Fuze Ecoteer.`,
         brief ? `Use this brief excerpt:\n${brief.slice(0, 6500)}` : "Use the current Fuze Ecoteer competitor intelligence brief.",
         "Return a balanced mix of Price Comparison and Competitor Analysis rows.",
         "Priority benchmarks: Mowgli Venture, Malaysia Wildlife, TRACC, SEATRU, PULIHARA, Bubbles Turtle Project, Juara Turtle Project, Nomad Adventure, World Volunteer, Radiant Retreats, OrcaNation, Biji-Biji Initiative.",
         "Project categories: Turtle Volunteer project, Diving volunteer project, 3d2n eco package, Turtle necklace, School camp 5d4n, ESG/CSR related corporate programme.",
-        "Score each organisation out of 100, active marketing out of 50, and momentum out of 20.",
+        "Score each organisation out of 100, active marketing out of 50, and momentum out of 20. Keep every text field under 160 characters so the JSON is complete.",
         "Return a JSON array. Each item must use these keys:",
         "research_type, organisation, offer, visible_price, country, location, target_market, category, source_url, source, strength, risk, fe_response, current_score, rating_band, trend, active_marketing_score, momentum_score, threat_level, website_score, social_score, seo_aeo_score, youtube_score, cost_value_score, logistics_score, trust_score, strategic_learning_score, most_active_channel, main_campaign_theme, keyword_notes, aeo_notes, backlink_notes, social_notes, website_change_notes, evidence_links, what_we_can_learn, how_we_are_better, recommended_action, confidence.",
         "research_type must be exactly Price Comparison or Competitor Analysis. confidence must be 0 to 1.",
@@ -534,19 +563,27 @@ async function updateMarketingResearchDatabase({ runDate, limit = 40, dryRun = f
 }
 
 async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false } = {}) {
+  const brief = readAutomationBrief("cold-email-crm");
   const rows = await generateJsonRows({
     label: "cold email CRM",
+    maxOutputTokens: 12000,
+    system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
     prompt: [
       `Run date: ${runDate}.`,
       `Create up to ${limit} cold-email CRM prospect rows for Fuze Ecoteer.`,
-      "Target segments:",
-      "1. Schools in Malaysia, Singapore, Indonesia, Thailand, Hong Kong, Middle East, Japan, Korea, China and nearby international-school markets.",
-      "2. Day cares / tadika / taska in Selangor, Kuala Lumpur, Cyberjaya and nearby Klang Valley areas.",
-      "3. Corporates, especially HR and CSR departments in Malaysia. Focus on companies with ESG, sustainability, education, biodiversity, ocean, community, waste, youth, tourism, or employee volunteering relevance.",
-      "Do deep enough research notes that a later email-writing bot can write a specific personalized cold email.",
+      brief ? `Use this CRM research brief:\n${brief.slice(0, 12000)}` : "Use the current Fuze Ecoteer cold-email CRM research brief.",
+      "Return a balanced weekly set across five lead groups: School, Tadika / Preschool, University, Corporate HR / CSR, and Network / Referral Partner.",
+      "If the requested limit is 100 or more, return 20 leads per group. If the requested limit is lower, keep the mix balanced across the five groups.",
+      "For Network / Referral Partner, prioritize travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers, travel bloggers, eco-tourism directories, responsible travel publishers and collaboration/referral partners for PTP, PMRS and PEEP.",
+      "At least half of Network / Referral Partner leads must be travel/referral outlets, not schools, universities, taska, tadika, day-care, preschool or general education providers.",
+      "Use lead_segment exactly Network / Referral Partner for travel websites, travel agents, tourism platforms, volunteer travel sites, travel media, influencers, publishers and referral partners.",
+      "Do deep enough research notes that a later email-writing bot can write a specific personalised cold email, but do not write the outreach email.",
       "Return a JSON array. Each item must use these keys:",
       "lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, linkedin_url, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
-      "lead_segment must be School, Day care / Tadika / Taska, or Corporate HR / CSR.",
+      "lead_segment must be exactly one of: School, Tadika / Preschool, University, Corporate HR / CSR, Network / Referral Partner.",
+      "priority must include a score and band, for example Priority A - 92/100, Priority B - 81/100, Priority C - 67/100, Nurture - 54/100, or Low priority - 35/100.",
+      "research_notes must include evidence of fit, recent activity, LinkedIn/social summary, likely decision-maker, buyer motivation, pain point, timing, caution/uncertainty and source URLs.",
+      "personalization_angle must be a concise hook for the future email-writing agent, not outreach copy.",
       "confidence must be 0 to 1. Use null when a contact email is not confidently known.",
       "Do not invent private personal emails. Prefer official pages, enquiry emails, department emails, LinkedIn/company pages, or source search phrases.",
     ].join("\n"),
