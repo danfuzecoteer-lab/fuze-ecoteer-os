@@ -149,6 +149,7 @@ function scoreLead(profile, lead) {
 function pickLeads(profile, leads, limit) {
   const candidates = leads
     .filter((lead) => lead && cleanText(lead.organisation_name))
+    .filter((lead) => !profile.segments || !profile.segments.length || segmentMatches(profile, lead.lead_segment))
     .filter((lead) => isValidEmail(lead.email))
     .filter((lead) => !isPreviouslyDrafted(lead))
     .filter((lead) => !isRejectedLead(profile, lead))
