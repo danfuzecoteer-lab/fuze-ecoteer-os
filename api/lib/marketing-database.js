@@ -1406,7 +1406,7 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
   const travelPlan = plan.find((item) => item.segment === "Network / Referral Partner");
   const neededTravelCount = travelPlan ? travelPlan.count : 0;
   if (currentTravelCount < neededTravelCount) {
-    const fallbackRows = await buildTravelReferralFallbackRows(runDate, neededCount - currentTravelCount);
+    const fallbackRows = await buildTravelReferralFallbackRows(runDate, neededTravelCount - currentTravelCount);
     const normalizedFallback = fallbackRows
       .map((row) => normalizeColdEmailLead(row, runDate))
       .filter((row) => row && row.organisation_name);
