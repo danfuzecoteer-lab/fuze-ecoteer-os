@@ -25,6 +25,36 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanText(value));
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function replacePromptVars(template, replacements) {
+  let rendered = cleanText(template).replace(/^\uFEFF/, "");
+  for (const [key, value] of Object.entries(replacements)) {
+    rendered = rendered.replaceAll(`\${${key}}`, value);
+  }
+  return rendered;
+}
+
+function normalizeBriefPrompt(brief, { runDate, limit }) {
+  if (!cleanText(brief)) return "";
+  const rendered = replacePromptVars(brief, {
+    runDate: String(runDate || ""),
+    limit: String(limit),
+  });
+
+  return rendered
+    .split(/\r?\n/)
+    .filter((line) => !line.includes("${brief.slice("))
+    .join("\n")
+    .trim();
+}
+
 function cleanConfidence(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -501,6 +531,31 @@ function normalizeColdEmailLead(row, runDate) {
           ? "Tadika / Preschool"
           : "School";
 
+  const cleanedEmail = cleanText(row.email).toLowerCase();
+  const evidenceText = [
+    cleanText(row.research_notes || row.notes || row.background),
+    cleanText(row.source || row.website || row.url || row.link),
+    cleanText(row.contact_department || row.department),
+    cleanText(row.contact_name || row.contact),
+  ].join(" ").toLowerCase();
+  const websiteHost = cleanText(row.website || row.url || row.link)
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    .toLowerCase()
+    .replace(/^www\./, "");
+  const emailDomain = cleanedEmail.includes("@") ? cleanedEmail.split("@")[1] : "";
+  const looksLikeFreeInbox = /(gmail|yahoo|hotmail|outlook|icloud|aol|proton)\./i.test(emailDomain);
+  const looksGenericRole = /^(info|hello|contact|enquiry|inquiry|admissions|admission|hr|careers|jobs|corporate|csr|esg|team|office|admin|partnerships?|media|marketing|sales|support|reservations?)@/i.test(cleanedEmail);
+  const websiteMatchesEmailDomain = websiteHost && emailDomain && (emailDomain === websiteHost || emailDomain.endsWith(`.${websiteHost}`) || websiteHost.endsWith(`.${emailDomain}`));
+  const emailHasEvidence = cleanedEmail && evidenceText.includes(cleanedEmail);
+  const safeEmail = isValidEmail(cleanedEmail) && (emailHasEvidence || (websiteMatchesEmailDomain && looksGenericRole)) && !looksLikeFreeInbox
+    ? cleanedEmail
+    : null;
+  const sourceValues = uniqueStrings([
+    cleanText(row.source || row.website || row.url || row.link) || null,
+    safeEmail ? `public email verified: ${safeEmail}` : null,
+  ]);
+
   return {
     lead_segment: segment,
     organisation_name: cleanText(row.organisation_name || row.organisation || row.company || row.school || row.name),
@@ -509,7 +564,7 @@ function normalizeColdEmailLead(row, runDate) {
     website: cleanText(row.website || row.url || row.link) || null,
     contact_department: cleanText(row.contact_department || row.department) || null,
     contact_name: cleanText(row.contact_name || row.contact) || null,
-    email: cleanText(row.email) || null,
+    email: safeEmail,
     linkedin_url: cleanText(row.linkedin_url || row.linkedin) || null,
     research_notes: cleanText(row.research_notes || row.notes || row.background) || null,
     likely_need: cleanText(row.likely_need || row.need) || null,
@@ -518,7 +573,7 @@ function normalizeColdEmailLead(row, runDate) {
     priority: cleanText(row.priority) || "medium",
     status: "new",
     next_action: cleanText(row.next_action) || "Review, verify contact route, then prepare cold email",
-    source: cleanText(row.source || row.website || row.url || row.link) || null,
+    source: sourceValues.join(" | ") || null,
     confidence: cleanConfidence(row.confidence),
     run_date: runDate || null,
     last_seen_at: new Date().toISOString(),
@@ -564,14 +619,14 @@ async function updateMarketingResearchDatabase({ runDate, limit = 40, dryRun = f
 
 async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false } = {}) {
   const brief = readAutomationBrief("cold-email-crm");
+  const briefPrompt = normalizeBriefPrompt(brief, { runDate, limit });
   const rows = await generateJsonRows({
     label: "cold email CRM",
     maxOutputTokens: 12000,
     system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
-    prompt: [
+    prompt: briefPrompt || [
       `Run date: ${runDate}.`,
       `Create up to ${limit} cold-email CRM prospect rows for Fuze Ecoteer.`,
-      brief ? `Use this CRM research brief:\n${brief.slice(0, 12000)}` : "Use the current Fuze Ecoteer cold-email CRM research brief.",
       "Return a balanced weekly set across five lead groups: School, Tadika / Preschool, University, Corporate HR / CSR, and Network / Referral Partner.",
       "If the requested limit is 100 or more, return 20 leads per group. If the requested limit is lower, keep the mix balanced across the five groups.",
       "For Network / Referral Partner, prioritize travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers, travel bloggers, eco-tourism directories, responsible travel publishers and collaboration/referral partners for PTP, PMRS and PEEP.",
@@ -585,7 +640,7 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 50, dryRun = false 
       "research_notes must include evidence of fit, recent activity, LinkedIn/social summary, likely decision-maker, buyer motivation, pain point, timing, caution/uncertainty and source URLs.",
       "personalization_angle must be a concise hook for the future email-writing agent, not outreach copy.",
       "confidence must be 0 to 1. Use null when a contact email is not confidently known.",
-      "Do not invent private personal emails. Prefer official pages, enquiry emails, department emails, LinkedIn/company pages, or source search phrases.",
+      "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
     ].join("\n"),
   });
 
