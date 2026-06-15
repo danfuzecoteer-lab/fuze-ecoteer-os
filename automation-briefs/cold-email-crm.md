@@ -16,9 +16,18 @@ Lead volume rules:
 
 Travel website / Travel agent / Referral Partner rules:
 * Prioritize travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers, travel bloggers, eco-tourism directories, responsible travel publishers, and collaboration or referral partners for PTP, PMRS, and PEEP.
-* At least 50% of Network / Referral Partner leads must be travel, tourism, media, referral, partnership, influencer, publisher, or volunteer-travel outlets.
+* Every Network / Referral Partner row must be a real travel, tourism, media, referral, partnership, influencer, publisher, or volunteer-travel outlet.
 * Do not put any schools, universities, taska, tadika, daycare centres, preschools, general education providers, or corporate HR / CSR leads in this segment.
 * Use lead_segment exactly as Network / Referral Partner for travel websites, travel agents, tourism platforms, volunteer travel sites, travel media, influencers, publishers, responsible tourism directories, and referral partners.
+* Use these search ideas aggressively for this segment:
+  * 100 best volunteer travel websites in the world
+  * best volunteer travel companies
+  * responsible travel websites volunteer abroad
+  * eco tourism directories Asia
+  * gap year travel companies conservation
+  * volunteer travel platforms marine conservation
+* Named examples for this segment include organisations like GoAbroad, Projects Abroad, GoEco, Kaya Responsible Travel, WorkingAbroad, International Volunteer HQ, GVI, and similar real travel or volunteer-travel platforms.
+* Do not include conglomerates, general corporates, holding companies, airports, banks, schools, colleges, or childcare operators in this segment unless they are actually a travel or tourism distribution partner.
 
 Research quality requirements:
 * Do enough research that a later email-writing agent can write a specific, personalised cold email.
@@ -128,7 +137,7 @@ Field rules:
 Quality control before returning:
 * Check that the total row count does not exceed ${limit}.
 * Check that the five segments are balanced according to the lead volume rules.
-* Check that at least half of Network / Referral Partner leads are genuine travel, tourism, media, referral, influencer, publisher, or volunteer-travel outlets.
+* Check that every Network / Referral Partner lead is a genuine travel, tourism, media, referral, influencer, publisher, or volunteer-travel outlet.
 * Check that every object has exactly the required keys.
 * Check that the JSON is valid and parseable.
 * Check that no private personal emails or unsupported claims have been invented.
