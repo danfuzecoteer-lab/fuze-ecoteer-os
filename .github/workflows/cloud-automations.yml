@@ -49,9 +49,86 @@ on:
         type: string
 
 jobs:
-  run:
+  resolve:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      dry_run: ${{ steps.resolve.outputs.dry_run }}
+      test_to: ${{ steps.resolve.outputs.test_to }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve automation matrix
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            group="${{ inputs.group }}"
+            dry_run="${{ inputs.dry_run }}"
+            test_to="${{ inputs.test_to }}"
+            only_id="${{ inputs.only_id }}"
+          elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
+            group="daily-7am"
+            dry_run="false"
+            test_to=""
+            only_id=""
+          elif [ "${{ github.event.schedule }}" = "7 0 * * 1-5" ]; then
+            group="weekday-8am-outreach"
+            dry_run="false"
+            test_to=""
+            only_id=""
+          elif [ "${{ github.event.schedule }}" = "37 0 * * 1-5" ]; then
+            group="weekday-8am-outreach"
+            dry_run="false"
+            test_to=""
+            only_id=""
+          elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
+            group="sunday-10pm"
+            dry_run="false"
+            test_to=""
+            only_id=""
+          elif [ "${{ github.event.schedule }}" = "7 15 * * 0" ]; then
+            group="marketing-crm"
+            dry_run="false"
+            test_to=""
+            only_id=""
+          else
+            echo "Unknown schedule: ${{ github.event.schedule }}" >&2
+            exit 1
+          fi
+
+          matrix=$(node -e '
+            const { automationsForGroup } = require("./api/lib/cloud-automations");
+            const group = process.argv[1];
+            const onlyId = process.argv[2];
+            let automations = automationsForGroup(group);
+            if (onlyId) automations = automations.filter((automation) => automation.id === onlyId);
+            if (!automations.length) {
+              console.error(`No automations found for group: ${group}${onlyId ? ` and id: ${onlyId}` : ""}`);
+              process.exit(1);
+            }
+            const matrix = automations.map((automation) => ({
+              group,
+              only_id: automation.id,
+              name: automation.name,
+            }));
+            process.stdout.write(JSON.stringify(matrix));
+          ' "$group" "$only_id")
+
+          {
+            echo "matrix=$matrix"
+            echo "dry_run=$dry_run"
+            echo "test_to=$test_to"
+          } >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        automation: ${{ fromJson(needs.resolve.outputs.matrix) }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -62,8 +139,9 @@ jobs:
       GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      CRM_RESEARCH_LIMIT: "200"
-      CRM_BATCH_SIZE: "10"
+      CRM_RESEARCH_LIMIT: "2500"
+      CRM_BATCH_SIZE: "30"
+    name: ${{ matrix.automation.only_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,46 +149,17 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Resolve automation group
-        id: group
+      - name: Run automation
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "group=${{ inputs.group }}" >> "$GITHUB_OUTPUT"
-            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
-            echo "only_id=${{ inputs.only_id }}" >> "$GITHUB_OUTPUT"
-            echo "test_to=${{ inputs.test_to }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
-            echo "group=daily-7am" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 0 * * 1-5" ]; then
-            echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "37 0 * * 1-5" ]; then
-            echo "group=weekday-8am-outreach" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
-            echo "group=sunday-10pm" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "7 15 * * 0" ]; then
-            echo "group=marketing-crm" >> "$GITHUB_OUTPUT"
-            echo "dry_run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Unknown schedule: ${{ github.event.schedule }}" >&2
-            exit 1
-          fi
-
-      - name: Run cloud automations
-        shell: bash
-        run: |
-          args=(--group "${{ steps.group.outputs.group }}")
-          if [ "${{ steps.group.outputs.dry_run }}" = "true" ]; then
+          args=(
+            --group "${{ matrix.automation.group }}"
+            --only-id "${{ matrix.automation.only_id }}"
+          )
+          if [ "${{ needs.resolve.outputs.dry_run }}" = "true" ]; then
             args+=(--dry-run)
           fi
-          if [ -n "${{ steps.group.outputs.only_id }}" ]; then
-            args+=(--only-id "${{ steps.group.outputs.only_id }}")
-          fi
-          if [ -n "${{ steps.group.outputs.test_to }}" ]; then
-            args+=(--test-to "${{ steps.group.outputs.test_to }}")
+          if [ -n "${{ needs.resolve.outputs.test_to }}" ]; then
+            args+=(--test-to "${{ needs.resolve.outputs.test_to }}")
           fi
           node scripts/run-cloud-automations.js "${args[@]}"
