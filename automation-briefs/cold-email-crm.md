@@ -9,10 +9,10 @@ Return a balanced weekly prospect set across these five lead segments:
 5. Travel website / Travel agent / Referral Partner
 
 Lead volume rules:
-* If ${limit} is 100 or more, return exactly 20 leads per segment each time.
-* If ${limit} is below 100, distribute leads as evenly as possible across the five segments.
+* The runtime may request one segment at a time in batches. Follow the exact per-batch count requested by the runtime prompt.
+* Keep coverage balanced across the five segments over the full run.
 * Do not overfill one segment unless there are not enough credible leads in another segment.
-* Return no more than ${limit} total rows.
+* Return no more than the number of rows explicitly requested by the runtime prompt for that batch.
 
 Travel website / Travel agent / Referral Partner rules:
 * Prioritize travel websites, travel agents, volunteer travel platforms, gap-year companies, responsible tourism sites, travel media, career-break partners, influencers, travel bloggers, eco-tourism directories, responsible travel publishers, and collaboration or referral partners for PTP, PMRS, and PEEP.
