@@ -1,17 +1,6 @@
 name: Cloud Automations
 
 on:
-  schedule:
-    # 7:07 AM Asia/Kuala_Lumpur. GitHub cron is UTC, so this is 11:07 PM UTC the previous day.
-    - cron: "7 23 * * *"
-    # Weekdays 8:07 AM Asia/Kuala_Lumpur. Outreach agents create Gmail drafts only.
-    - cron: "7 0 * * 1-5"
-    # Weekdays 8:37 AM Asia/Kuala_Lumpur. Backup outreach run because GitHub scheduled jobs can be delayed or dropped.
-    - cron: "37 0 * * 1-5"
-    # Sunday 10:07 PM Asia/Kuala_Lumpur. Avoid the top of the hour for scheduled reliability.
-    - cron: "7 14 * * 0"
-    # Sunday 11:07 PM Asia/Kuala_Lumpur. Weekly CRM cold-email research.
-    - cron: "7 15 * * 0"
   workflow_dispatch:
     inputs:
       group:
@@ -67,33 +56,8 @@ jobs:
             dry_run="${{ inputs.dry_run }}"
             test_to="${{ inputs.test_to }}"
             only_id="${{ inputs.only_id }}"
-          elif [ "${{ github.event.schedule }}" = "7 23 * * *" ]; then
-            group="daily-7am"
-            dry_run="false"
-            test_to=""
-            only_id=""
-          elif [ "${{ github.event.schedule }}" = "7 0 * * 1-5" ]; then
-            group="weekday-8am-outreach"
-            dry_run="false"
-            test_to=""
-            only_id=""
-          elif [ "${{ github.event.schedule }}" = "37 0 * * 1-5" ]; then
-            group="weekday-8am-outreach"
-            dry_run="false"
-            test_to=""
-            only_id=""
-          elif [ "${{ github.event.schedule }}" = "7 14 * * 0" ]; then
-            group="sunday-10pm"
-            dry_run="false"
-            test_to=""
-            only_id=""
-          elif [ "${{ github.event.schedule }}" = "7 15 * * 0" ]; then
-            group="marketing-crm"
-            dry_run="false"
-            test_to=""
-            only_id=""
           else
-            echo "Unknown schedule: ${{ github.event.schedule }}" >&2
+            echo "Unknown event: ${{ github.event_name }}" >&2
             exit 1
           fi
 
