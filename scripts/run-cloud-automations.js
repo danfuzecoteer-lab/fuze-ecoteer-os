@@ -53,9 +53,9 @@ function crmRetryLimits() {
   const configured = Number(process.env.CRM_RESEARCH_LIMIT || 0);
   if (Number.isFinite(configured) && configured > 0) {
     const rounded = Math.round(configured);
-    return [...new Set([rounded, Math.min(rounded, 1200), 600, 300, 120, 60])];
+    return [...new Set([rounded, Math.min(rounded, 150), 100, 60, 30].filter((value) => value > 0 && value <= rounded))];
   }
-  return [2500, 1200, 600, 300, 120, 60];
+  return [250, 150, 100, 60, 30];
 }
 
 function countRowsBySegment(rows = []) {
