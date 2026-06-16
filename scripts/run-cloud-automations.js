@@ -1,160 +1,320 @@
 #!/usr/bin/env node
 
-const {
-  listCloudAutomations,
-  runCloudAutomationById,
-  runCloudAutomationGroup,
-} = require('../api/lib/cloud-automations');
+const { automationsForGroup, malaysiaDateParts } = require("../api/lib/cloud-automations");
+const { buildDailyEcoFeContext } = require("../api/lib/fe-context");
+const { buildAutomationNoteContext, sendEmail } = require("../api/lib/gmail");
+const { generateAutomationEmail } = require("../api/lib/openai");
+const { updateGrantDatabase } = require("../api/lib/grant-database");
+const { updateColdEmailCrmDatabase, updateMarketingResearchDatabase } = require("../api/lib/marketing-database");
+const { createOutreachDrafts } = require("../api/lib/outreach-drafts");
 
 function parseArgs(argv) {
-  const args = { dryRun: false, group: null, onlyId: null, testTo: null };
+  const args = { group: "", dryRun: false, onlyId: "", testTo: "" };
   for (let index = 2; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === '--dry-run') {
+    const value = argv[index];
+    if (value === "--dry-run") {
       args.dryRun = true;
-      continue;
-    }
-    if (token === '--group') {
-      args.group = argv[index + 1] || null;
+    } else if (value === "--group") {
+      args.group = argv[index + 1] || "";
       index += 1;
-      continue;
-    }
-    if (token === '--only-id') {
-      args.onlyId = argv[index + 1] || null;
+    } else if (value === "--only-id") {
+      args.onlyId = argv[index + 1] || "";
       index += 1;
-      continue;
-    }
-    if (token === '--test-to') {
-      args.testTo = argv[index + 1] || null;
+    } else if (value === "--test-to") {
+      args.testTo = argv[index + 1] || "";
       index += 1;
-      continue;
     }
-    if (token === '--help' || token === '-h') {
-      args.help = true;
-      break;
-    }
-    throw new Error(`Unknown argument: ${token}`);
   }
   return args;
 }
 
-function printUsage() {
-  console.log('Usage: node scripts/run-cloud-automations.js [--group name] [--only-id automation-id] [--dry-run] [--test-to emails]');
-  console.log('');
-  console.log('Runs one cloud automation group or a single automation in the current environment.');
+function isDatabaseAutomation(id) {
+  return [
+    "grant-database-list",
+    "competition-analaysis",
+    "cold-email-crm",
+    "education-outreach-finder",
+    "corporate-outreach-finder",
+    "travel-outreach-finder",
+    "re-engager",
+  ].includes(id);
 }
 
-function resolveTestRecipients(raw) {
-  if (!raw) {
-    return null;
-  }
-
-  const recipients = raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return recipients.length ? recipients : null;
+function isOutreachDraftAutomation(id) {
+  return [
+    "education-outreach-finder",
+    "corporate-outreach-finder",
+    "travel-outreach-finder",
+    "re-engager",
+  ].includes(id);
 }
 
 function crmRetryLimits() {
-  const configured = Number.parseInt(process.env.CRM_RESEARCH_LIMIT || '', 10);
+  const configured = Number(process.env.CRM_RESEARCH_LIMIT || 0);
   if (Number.isFinite(configured) && configured > 0) {
-    const rounded = Math.max(1, configured);
-    return [rounded, Math.min(rounded, 1200), 600, 300, 120, 60].filter(
-      (value, index, array) => Number.isFinite(value) && value > 0 && array.indexOf(value) === index,
-    );
+    const rounded = Math.round(configured);
+    return [...new Set([rounded, Math.min(rounded, 1200), 600, 300, 120, 60])];
   }
   return [2500, 1200, 600, 300, 120, 60];
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
-  if (args.help) {
-    printUsage();
-    return;
+function countRowsBySegment(rows = []) {
+  const counts = {};
+  for (const row of rows) {
+    const segment = row && row.lead_segment ? row.lead_segment : "Unknown";
+    counts[segment] = (counts[segment] || 0) + 1;
   }
-
-  const automations = listCloudAutomations();
-  const defaultGroup = args.group || process.env.CLOUD_AUTOMATION_GROUP || 'daily-7am';
-  const testRecipients = resolveTestRecipients(args.testTo || process.env.TEST_TO || '');
-
-  if (args.onlyId) {
-    const automation = automations.find((item) => item.id === args.onlyId);
-    if (!automation) {
-      throw new Error(`Automation not found: ${args.onlyId}`);
-    }
-
-    console.log(`Running cloud automation ${automation.id} (${automation.label})`);
-    const result = await runCloudAutomationById(automation.id, {
-      runDate: new Date(),
-      dryRun: args.dryRun,
-      testRecipients,
-    });
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-
-  let lastError = null;
-  const isMarketingCrm = defaultGroup === 'marketing-crm';
-
-  const baseOptions = {
-    runDate: new Date(),
-    dryRun: args.dryRun,
-    testRecipients,
-  };
-
-  const limitAttempts = isMarketingCrm
-    ? crmRetryLimits().map((limit) => ({ ...baseOptions, crmResearchLimit: limit }))
-    : [baseOptions];
-
-  for (let index = 0; index < limitAttempts.length; index += 1) {
-    const attemptOptions = limitAttempts[index];
-    const attemptNumber = index + 1;
-    try {
-      if (isMarketingCrm && attemptOptions.crmResearchLimit) {
-        console.log(
-          `Running cloud automation group ${defaultGroup} (attempt ${attemptNumber}/${limitAttempts.length}, CRM_RESEARCH_LIMIT=${attemptOptions.crmResearchLimit})`,
-        );
-      } else {
-        console.log(`Running cloud automation group ${defaultGroup}`);
-      }
-      const results = await runCloudAutomationGroup(defaultGroup, attemptOptions);
-      console.log(JSON.stringify(results, null, 2));
-      if (isMarketingCrm) {
-        const crmResult = Array.isArray(results)
-          ? results.find((item) => item && item.id === 'cold-email-crm')
-          : null;
-        if (crmResult?.result?.plan) {
-          console.log('CRM segment top-up plan:');
-          console.log(JSON.stringify(crmResult.result.plan, null, 2));
-        }
-        if (crmResult?.result?.existingCounts) {
-          console.log('Existing CRM segment counts before run:');
-          console.log(JSON.stringify(crmResult.result.existingCounts, null, 2));
-        }
-        if (crmResult?.result?.targets) {
-          console.log('CRM target counts:');
-          console.log(JSON.stringify(crmResult.result.targets, null, 2));
-        }
-      }
-      return;
-    } catch (error) {
-      lastError = error;
-      if (!isMarketingCrm) {
-        break;
-      }
-      const limit = attemptOptions.crmResearchLimit;
-      console.error(
-        `marketing-crm attempt ${attemptNumber}/${limitAttempts.length} failed${limit ? ` at CRM_RESEARCH_LIMIT=${limit}` : ''}: ${error.message}`,
-      );
-    }
-  }
-
-  throw lastError || new Error(`Cloud automation group failed: ${defaultGroup}`);
+  return counts;
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exitCode = 1;
-});
+async function updateColdEmailCrmWithRetry({ runDate }) {
+  let lastError = null;
+  const warnings = [];
+  for (const limit of crmRetryLimits()) {
+    try {
+      if (lastError) {
+        console.warn(`Retrying cold-email CRM update with ${limit} leads after: ${lastError.message}`);
+      }
+      const result = await updateColdEmailCrmDatabase({ runDate, limit });
+      if (warnings.length) {
+        result.warning = warnings.join(" | ");
+      }
+      result.requestedLimit = limit;
+      return result;
+    } catch (error) {
+      lastError = error;
+      const retryable = /JSON|Unterminated string|No JSON array|OpenAI|aborted|timeout/i.test(error.message);
+      warnings.push(`CRM generation failed at limit ${limit}: ${error.message}`);
+      if (!retryable) break;
+    }
+  }
+  throw lastError;
+}
+
+async function sendStatusEmail({ automation, isoDate, status, lines }) {
+  if (!isDatabaseAutomation(automation.id)) return null;
+  const gmailEnvNames = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN", "GMAIL_FROM"];
+  const missingGmailEnv = gmailEnvNames.filter((name) => !process.env[name]);
+  if (missingGmailEnv.length) {
+    console.warn(`Skipping ${automation.id} status email; missing ${missingGmailEnv.join(", ")}`);
+    return null;
+  }
+
+  const body = [
+    `Automation: ${automation.name}`,
+    `Status: ${status}`,
+    `Date: ${isoDate}`,
+    "",
+    ...lines,
+    "",
+    "This is an automatic completion notice from the GitHub Actions cloud runner.",
+  ].join("\n");
+
+  return sendEmail({
+    to: automation.to,
+    subject: `Automation ${status} | ${automation.name} | ${isoDate}`,
+    body,
+  });
+}
+
+async function sendStatusEmailBestEffort({ automation, isoDate, status, lines }) {
+  try {
+    const result = await sendStatusEmail({ automation, isoDate, status, lines });
+    if (result) {
+      console.log(`Sent ${automation.id} ${status.toLowerCase()} notice: ${result.id || "ok"}`);
+    }
+    return result;
+  } catch (error) {
+    console.warn(`Could not send ${automation.id} ${status.toLowerCase()} notice: ${error.message}`);
+    return null;
+  }
+}
+
+async function main() {
+  const { group, dryRun, onlyId, testTo } = parseArgs(process.argv);
+  if (!group) {
+    throw new Error("Missing required --group value");
+  }
+
+  const { isoDate } = malaysiaDateParts();
+  let automations = automationsForGroup(group);
+  if (onlyId) {
+    automations = automations.filter((automation) => automation.id === onlyId);
+  }
+  if (!automations.length) {
+    throw new Error(`No automations found for group: ${group}${onlyId ? ` and id: ${onlyId}` : ""}`);
+  }
+
+  console.log(`Running group ${group} for ${isoDate} (${automations.length} automation/s)`);
+
+  for (const automation of automations) {
+    const recipients = testTo
+      ? testTo.split(",").map((item) => item.trim()).filter(Boolean)
+      : automation.to;
+    const subject = `${automation.subjectPrefix} | ${isoDate}`;
+    try {
+      if (automation.id === "grant-database-list") {
+        if (dryRun) {
+          console.log(`[dry-run] ${automation.id} -> would upsert grant_opportunities in Supabase`);
+          continue;
+        }
+        console.log(`Updating online grant database`);
+        const grantLimit = Number(process.env.GRANT_RESEARCH_LIMIT || 70);
+        const result = await updateGrantDatabase({ runDate: isoDate, limit: grantLimit });
+        console.log(`Upserted ${result.saved.length} grant rows into Supabase`);
+        const lines = [
+          `Database updated: grant_opportunities`,
+          `Rows upserted: ${result.saved.length}`,
+        ];
+        if (result.warning) {
+          lines.push(`Warning: ${result.warning}`);
+        }
+        await sendStatusEmailBestEffort({
+          automation,
+          isoDate,
+          status: "Completed",
+          lines,
+        });
+        continue;
+      }
+
+      if (isOutreachDraftAutomation(automation.id)) {
+        console.log(`${dryRun ? "Planning" : "Creating"} Gmail outreach drafts for ${automation.name}`);
+        const result = await createOutreachDrafts({
+          agentId: automation.id,
+          runDate: isoDate,
+          limit: 10,
+          dryRun,
+        });
+
+        console.log(`${automation.id}: ${dryRun ? "selected" : "created"} ${dryRun ? result.selectedLeads.length : result.created.length} draft candidate/s`);
+        const lines = [
+          dryRun ? "Dry run only: no Gmail drafts created." : "Gmail drafts created only; no outreach emails were sent.",
+          `Drafts ${dryRun ? "planned" : "created"}: ${dryRun ? result.selectedLeads.length : result.created.length}`,
+          `Matched CRM leads checked: ${result.selectedLeads.length}`,
+        ];
+        if (result.created.length) {
+          lines.push("Draft leads:");
+          result.created.slice(0, 10).forEach((draft) => {
+            lines.push(`- ${draft.leadName} <${draft.to}> (${draft.draftId || "draft"})`);
+          });
+        } else if (result.selectedLeads.length) {
+          lines.push("Candidate leads:");
+          result.selectedLeads.slice(0, 10).forEach((lead) => {
+            lines.push(`- ${lead.organisation_name} <${lead.email}>`);
+          });
+        }
+        if (result.skipped.length) {
+          lines.push("Skipped:");
+          result.skipped.slice(0, 10).forEach((item) => lines.push(`- ${item}`));
+        }
+
+        if (!dryRun) {
+          await sendStatusEmailBestEffort({
+            automation,
+            isoDate,
+            status: "Completed",
+            lines,
+          });
+        } else {
+          console.log(lines.join("\n"));
+        }
+        continue;
+      }
+
+      if (dryRun) {
+        console.log(`[dry-run] ${automation.id} -> ${recipients.join(", ")} :: ${subject}`);
+        continue;
+      }
+
+      const statusLines = [];
+      if (automation.id === "competition-analaysis") {
+        console.log("Updating online marketing research database");
+        const result = await updateMarketingResearchDatabase({ runDate: isoDate, limit: 40 });
+        console.log(`Upserted ${result.saved.length} marketing research rows into Supabase`);
+        statusLines.push("Database updated: marketing_research_rows");
+        statusLines.push(`Rows upserted: ${result.saved.length}`);
+        if (result.warning) {
+          statusLines.push(`Warning: ${result.warning}`);
+        }
+      }
+
+      if (automation.id === "cold-email-crm") {
+        console.log("Updating online cold-email CRM database");
+        const result = await updateColdEmailCrmWithRetry({ runDate: isoDate });
+        console.log(`Upserted ${result.saved.length} cold-email CRM rows into Supabase`);
+        statusLines.push("Database updated: marketing_cold_email_leads");
+        statusLines.push(`Rows upserted: ${result.saved.length}`);
+        statusLines.push(`Generation limit used: ${result.requestedLimit}`);
+        if (Array.isArray(result.rows) && result.rows.length) {
+          const generatedCounts = countRowsBySegment(result.rows);
+          statusLines.push(`Generated rows this run: ${Object.entries(generatedCounts).map(([segment, count]) => `${segment}=${count}`).join(", ")}`);
+        }
+        if (Array.isArray(result.plan) && result.plan.length) {
+          statusLines.push(`Planned segment top-up: ${result.plan.map((item) => `${item.segment}=${item.count}`).join(", ")}`);
+        }
+        if (result.targets && result.existingCounts) {
+          statusLines.push(`Existing counts before run: ${Object.entries(result.existingCounts).map(([segment, count]) => `${segment}=${count}`).join(", ")}`);
+          statusLines.push(`Target counts: ${Object.entries(result.targets).map(([segment, count]) => `${segment}=${count}`).join(", ")}`);
+        }
+        if (result.warning) {
+          statusLines.push(`Warning: ${result.warning}`);
+        }
+      }
+
+      console.log(`Generating ${automation.id}`);
+      let noteContext = "";
+      try {
+        noteContext = await buildAutomationNoteContext(automation);
+        if (noteContext) {
+          console.log(`Included Gmail reply notes for ${automation.id}`);
+        }
+      } catch (error) {
+        console.warn(`Could not load Gmail reply notes for ${automation.id}: ${error.message}`);
+      }
+
+      if (automation.id === "daily-eco-fun-facts") {
+        try {
+          const feContext = await buildDailyEcoFeContext(isoDate);
+          noteContext = [noteContext, feContext].filter(Boolean).join("\n\n");
+          console.log(`Included FE project and volunteer context for ${automation.id}`);
+        } catch (error) {
+          console.warn(`Could not load FE project and volunteer context for ${automation.id}: ${error.message}`);
+        }
+      }
+
+      const body = await generateAutomationEmail(automation, isoDate, noteContext);
+      const sent = await sendEmail({ to: recipients, subject, body });
+      console.log(`Sent ${automation.id}: ${sent.id || "ok"}`);
+
+      if (statusLines.length) {
+        statusLines.push(`Brief email sent: ${sent.id || "ok"}`);
+        await sendStatusEmailBestEffort({
+          automation,
+          isoDate,
+          status: "Completed",
+          lines: statusLines,
+        });
+      }
+    } catch (error) {
+      console.error(`${automation.id} failed: ${error.message}`);
+      await sendStatusEmailBestEffort({
+        automation,
+        isoDate,
+        status: "Failed",
+        lines: [
+          `Error: ${error.message}`,
+          "Check the GitHub Actions run logs for the full trace.",
+        ],
+      });
+      throw error;
+    }
+  }
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
