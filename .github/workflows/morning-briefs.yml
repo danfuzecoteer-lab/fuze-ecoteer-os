@@ -1,0 +1,62 @@
+name: Morning Briefs
+
+on:
+  schedule:
+    # 7:07 AM Asia/Kuala_Lumpur.
+    - cron: "7 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve morning brief matrix
+        id: resolve
+        shell: bash
+        run: |
+          matrix=$(node -e '
+            const { malaysiaDateParts } = require("./api/lib/cloud-automations");
+            const { weekday } = malaysiaDateParts();
+            const ids = [
+              "world-of-research",
+              "green-tech-and-energy-shares-and-chips",
+              "fe-portal-suggestions-actioner",
+              "head-of-marketing",
+            ];
+            if (weekday === "Tue") ids.push("competition-analaysis");
+            process.stdout.write(JSON.stringify(ids.map((only_id) => ({ only_id }))));
+          ')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        automation: ${{ fromJson(needs.resolve.outputs.matrix) }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: gpt-5.4-mini
+      GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+      GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+      GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+      GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    name: ${{ matrix.automation.only_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run morning brief
+        run: node scripts/run-cloud-automations.js --group daily-7am --only-id "${{ matrix.automation.only_id }}"
