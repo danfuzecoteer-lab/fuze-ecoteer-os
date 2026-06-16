@@ -22,8 +22,8 @@ jobs:
       GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      CRM_RESEARCH_LIMIT: "2500"
-      CRM_BATCH_SIZE: "30"
+      CRM_RESEARCH_LIMIT: "250"
+      CRM_BATCH_SIZE: "12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
