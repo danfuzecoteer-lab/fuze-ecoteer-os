@@ -147,7 +147,7 @@ const CRM_SEGMENT_TARGET_DEFAULTS = {
   "Network / Referral Partner": 5000,
 };
 
-const CRM_BATCH_SIZE = Math.max(10, Math.min(20, Number(process.env.CRM_BATCH_SIZE || 20) || 20));
+const CRM_BATCH_SIZE = Math.max(5, Math.min(100, Number(process.env.CRM_BATCH_SIZE || 20) || 20));
 
 function crmSegmentTargets() {
   return {
@@ -188,6 +188,17 @@ function buildColdEmailSegmentPlan({ existingCounts = {}, maxNewRows = 0 }) {
   }
 
   return plan.filter((item) => item.count > 0);
+}
+
+function crmBatchAttemptSizes(requestedBatchSize) {
+  const safe = Math.max(1, Number(requestedBatchSize) || 1);
+  return [...new Set([
+    safe,
+    Math.min(safe, 20),
+    Math.min(safe, 10),
+    Math.min(safe, 5),
+    1,
+  ].filter((value) => value > 0))];
 }
 
 function segmentSpecificPrompt(segment) {
@@ -662,119 +673,177 @@ function combinedLeadText(row) {
     cleanText(row.contact_department || row.department),
     cleanText(row.contact_name || row.contact),
     cleanText(row.research_notes || row.notes || row.background),
+    cleanText(row.likely_need || row.need),
     cleanText(row.recommended_offer || row.offer),
     cleanText(row.personalization_angle || row.angle),
-    cleanText(row.source || row.website || row.url || row.link),
+    cleanText(row.source),
   ].join(" ").toLowerCase();
 }
 
-function textHasAny(text, terms) {
-  return terms.some((term) => text.includes(term));
+function includesAny(text, terms) {
+  return terms.some((term) => text.includes(String(term).toLowerCase()));
 }
 
 function isTravelReferralLead(row) {
   const text = combinedLeadText(row);
-  const lowerSegment = cleanText(row.lead_segment).toLowerCase();
-  const site = cleanText(row.website || row.url || row.link).toLowerCase();
-  const org = cleanText(row.organisation_name || row.organisation || row.company || row.name).toLowerCase();
-  const email = cleanText(row.email).toLowerCase();
-  const contact = cleanText(row.contact_department || row.department || row.contact_name || row.contact).toLowerCase();
-
-  if (textHasAny(text, EDUCATION_TERMS) || textHasAny(site, EDUCATION_TERMS) || textHasAny(org, EDUCATION_TERMS)) {
-    return false;
-  }
-  if (textHasAny(text, CORPORATE_TERMS) && !textHasAny(text, TRAVEL_REFERRAL_TERMS)) {
-    return false;
-  }
-  if (textHasAny(site, CORPORATE_TERMS) && !textHasAny(site, TRAVEL_REFERRAL_TERMS)) {
-    return false;
-  }
-  if (textHasAny(contact, ["admissions", "principal", "kindergarten", "school"])) return false;
-
-  const hasTravelEvidence =
-    textHasAny(text, TRAVEL_REFERRAL_TERMS) ||
-    textHasAny(site, TRAVEL_REFERRAL_TERMS) ||
-    textHasAny(org, TRAVEL_REFERRAL_TERMS) ||
-    textHasAny(contact, ["partnership", "travel", "media", "editor", "collaboration"]);
-
-  if (lowerSegment.includes("travel") || lowerSegment.includes("referral") || lowerSegment.includes("partner")) return hasTravelEvidence;
-  return hasTravelEvidence;
+  return includesAny(text, TRAVEL_REFERRAL_TERMS) && !includesAny(text, EDUCATION_TERMS) && !includesAny(text, CORPORATE_TERMS);
 }
 
 function isCorporateLead(row) {
   const text = combinedLeadText(row);
-  return textHasAny(text, CORPORATE_TERMS) && !textHasAny(text, EDUCATION_TERMS);
+  return includesAny(text, CORPORATE_TERMS) && !includesAny(text, EDUCATION_TERMS);
 }
 
 function isUniversityLead(row) {
-  return textHasAny(combinedLeadText(row), UNIVERSITY_TERMS);
+  const text = combinedLeadText(row);
+  return includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
 }
 
 function isPreschoolLead(row) {
-  return textHasAny(combinedLeadText(row), PRESCHOOL_TERMS);
+  const text = combinedLeadText(row);
+  return includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, CORPORATE_TERMS);
 }
 
 function isSchoolLead(row) {
   const text = combinedLeadText(row);
-  return textHasAny(text, SCHOOL_TERMS) && !textHasAny(text, UNIVERSITY_TERMS) && !textHasAny(text, PRESCHOOL_TERMS);
+  return includesAny(text, SCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
 }
 
-function cleanConfidence(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 0.5;
-  return Math.min(1, Math.max(0, numeric));
-}
-
-function cleanScore(value, max = 100) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return Math.max(0, Math.min(max, Math.round(numeric)));
-}
-
-function compactDetails(fields) {
-  return Object.entries(fields)
-    .filter(([, value]) => cleanText(value))
-    .map(([key, value]) => `${key}: ${cleanText(value)}`)
-    .join(" | ");
-}
-
-function readAutomationBrief(name) {
-  const directPath = process.env[`BRIEF_FILE_${name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`];
+async function fetchTravelSeedEvidence(seed) {
+  const checkedUrls = [];
+  const emails = new Set();
+  const seen = new Set();
+  const base = cleanText(seed.website).replace(/\/+$/, "");
   const candidates = [
-    directPath,
-    path.join(process.cwd(), "prompts", `${name}.md`),
-    path.join(process.cwd(), "prompts", `${name}.txt`),
-  ].filter(Boolean);
+    base,
+    `${base}/contact`,
+    `${base}/contact-us`,
+    `${base}/about`,
+    `${base}/about-us`,
+  ];
 
-  for (const candidate of candidates) {
+  for (const url of candidates) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
     try {
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf8");
+      const response = await fetch(url, {
+        headers: { "user-agent": "Mozilla/5.0 Codex" },
+      });
+      if (!response.ok) continue;
+      checkedUrls.push(url);
+      const text = await response.text();
+      const matches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
+      for (const match of matches) {
+        const email = cleanText(match).toLowerCase();
+        if (isValidEmail(email)) {
+          emails.add(email);
+        }
       }
     } catch (_error) {
-      // ignore and continue to next candidate
+      // Ignore fetch failures for seed enrichment.
     }
   }
 
-  return "";
+  return {
+    emails: [...emails],
+    checkedUrls,
+  };
 }
 
-async function openAiResponsesJson({ system, prompt, label, maxOutputTokens = 4000, jsonSchema = null }) {
-  const apiKey = requireEnv("OPENAI_API_KEY");
+async function buildTravelReferralFallbackRows(runDate, neededCount) {
+  const rows = [];
+  for (const seed of TRAVEL_REFERRAL_SEEDS.slice(0, neededCount)) {
+    const evidence = await fetchTravelSeedEvidence(seed);
+    const email = evidence.emails[0] || null;
+    const emailEvidence = email ? `Public email found: ${email}` : "No public email found during fallback site scan.";
+    const checkedSource = evidence.checkedUrls.length ? evidence.checkedUrls.join(", ") : seed.website;
+    rows.push({
+      lead_segment: "Network / Referral Partner",
+      organisation_name: seed.organisation_name,
+      country: seed.country,
+      city: seed.city,
+      website: seed.website,
+      contact_department: "Partnerships / Enquiries",
+      contact_name: null,
+      email,
+      linkedin_url: null,
+      research_notes: [
+        `${seed.organisation_name} is a travel / volunteer travel / responsible tourism platform relevant to referral partnerships for PTP, PMRS and PEEP.`,
+        emailEvidence,
+        `Fallback source URLs checked: ${checkedSource}`,
+      ].join(" "),
+      likely_need: "Fresh responsible travel or conservation programme partners for its audience.",
+      recommended_offer: seed.recommended_offer,
+      personalization_angle: `${seed.organisation_name} already promotes travel or volunteer experiences, so a Perhentian conservation collaboration is a direct audience fit.`,
+      priority: email ? "Priority B - 80/100" : "Nurture - 55/100",
+      next_action: email ? "send tailored cold email" : "verify public contact email",
+      source: `${seed.source} | ${checkedSource}${email ? ` | public email verified: ${email}` : ""}`,
+      confidence: email ? 0.82 : 0.58,
+    });
+  }
+  return rows;
+}
+
+function cleanConfidence(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(1, number));
+}
+
+function cleanNumber(value, fallback = null) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return number;
+}
+
+function cleanScore(value, max = 100) {
+  const number = cleanNumber(value);
+  if (number === null) return null;
+  return Math.max(0, Math.min(max, Math.round(number)));
+}
+
+function readAutomationBrief(name) {
+  const briefPath = path.join(process.cwd(), "automation-briefs", `${name}.md`);
+  try {
+    return fs.readFileSync(briefPath, "utf8").trim();
+  } catch (error) {
+    return "";
+  }
+}
+
+function compactDetails(row) {
+  const parts = [
+    row.current_score !== null && row.current_score !== undefined ? `Score: ${row.current_score}/100` : "",
+    row.rating_band ? `Band: ${row.rating_band}` : "",
+    row.trend ? `Trend: ${row.trend}` : "",
+    row.active_marketing_score !== null && row.active_marketing_score !== undefined ? `Active marketing: ${row.active_marketing_score}/50` : "",
+    row.momentum_score !== null && row.momentum_score !== undefined ? `Momentum: ${row.momentum_score}/20` : "",
+    row.threat_level ? `Threat: ${row.threat_level}` : "",
+    row.most_active_channel ? `Channel: ${row.most_active_channel}` : "",
+    row.main_campaign_theme ? `Campaign: ${row.main_campaign_theme}` : "",
+    row.what_we_can_learn ? `Learn: ${row.what_we_can_learn}` : "",
+    row.how_we_are_better ? `FE better: ${row.how_we_are_better}` : "",
+    row.recommended_action ? `Action: ${row.recommended_action}` : "",
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
+async function generateJsonRows({ system, prompt, label, maxOutputTokens = 4000, jsonSchema = null }) {
   const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 150000);
   const body = {
     model,
     input: [
       {
         role: "system",
-        content: [{ type: "input_text", text: system }],
+        content: system || "Return only valid JSON. Do not include markdown, comments, or prose.",
       },
       {
         role: "user",
-        content: [{ type: "input_text", text: prompt }],
+        content: prompt,
       },
     ],
-    reasoning: { effort: "low" },
     max_output_tokens: maxOutputTokens,
   };
 
@@ -784,47 +853,93 @@ async function openAiResponsesJson({ system, prompt, label, maxOutputTokens = 40
         type: "json_schema",
         name: jsonSchema.name,
         schema: jsonSchema.schema,
+        strict: true,
       },
     };
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
+    signal: controller.signal,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-  });
+  }).finally(() => clearTimeout(timeout));
 
-  const payload = await response.json();
   if (!response.ok) {
-    throw new Error(`OpenAI ${label} failed: ${JSON.stringify(payload)}`);
+    throw new Error(`OpenAI ${label} generation failed: ${await response.text()}`);
   }
 
-  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
-    return payload.output_text.trim();
-  }
+  const data = await response.json();
+  const text = data.output_text || (data.output || [])
+    .flatMap((item) => item.content || [])
+    .filter((content) => content.type === "output_text")
+    .map((content) => content.text)
+    .join("\n");
 
-  const textParts = [];
-  for (const item of payload.output || []) {
-    for (const content of item.content || []) {
-      if (typeof content.text === "string" && content.text.trim()) {
-        textParts.push(content.text.trim());
-      }
-    }
-  }
-
-  const merged = textParts.join("\n").trim();
-  if (!merged) {
-    throw new Error(`OpenAI ${label} returned no text output`);
-  }
-  return merged;
+  return parseJsonRows(text, label);
 }
 
-async function generateJsonRows({ system, prompt, label, maxOutputTokens = 4000, jsonSchema = null }) {
-  const text = await openAiResponsesJson({ system, prompt, label, maxOutputTokens, jsonSchema });
-  return parseJsonRows(text, label);
+function jsonStringOrNullSchema() {
+  return {
+    anyOf: [
+      { type: "string" },
+      { type: "null" },
+    ],
+  };
+}
+
+function crmLeadRowSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "lead_segment",
+      "organisation_name",
+      "country",
+      "city",
+      "website",
+      "contact_department",
+      "contact_name",
+      "email",
+      "linkedin_url",
+      "research_notes",
+      "likely_need",
+      "recommended_offer",
+      "personalization_angle",
+      "priority",
+      "next_action",
+      "source",
+      "confidence",
+    ],
+    properties: {
+      lead_segment: { type: "string" },
+      organisation_name: { type: "string" },
+      country: { type: "string" },
+      city: jsonStringOrNullSchema(),
+      website: jsonStringOrNullSchema(),
+      contact_department: jsonStringOrNullSchema(),
+      contact_name: jsonStringOrNullSchema(),
+      email: jsonStringOrNullSchema(),
+      linkedin_url: jsonStringOrNullSchema(),
+      research_notes: jsonStringOrNullSchema(),
+      likely_need: jsonStringOrNullSchema(),
+      recommended_offer: jsonStringOrNullSchema(),
+      personalization_angle: jsonStringOrNullSchema(),
+      priority: { type: "string" },
+      next_action: jsonStringOrNullSchema(),
+      source: jsonStringOrNullSchema(),
+      confidence: {
+        anyOf: [
+          { type: "number" },
+          { type: "string" },
+          { type: "null" },
+        ],
+      },
+    },
+  };
 }
 
 function crmLeadArraySchema() {
@@ -832,117 +947,9 @@ function crmLeadArraySchema() {
     name: "crm_lead_rows",
     schema: {
       type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "lead_segment",
-          "organisation_name",
-          "country",
-          "city",
-          "website",
-          "contact_department",
-          "contact_name",
-          "email",
-          "linkedin_url",
-          "research_notes",
-          "likely_need",
-          "recommended_offer",
-          "personalization_angle",
-          "priority",
-          "next_action",
-          "source",
-          "confidence",
-        ],
-        properties: {
-          lead_segment: { type: "string" },
-          organisation_name: { type: "string" },
-          country: { type: "string" },
-          city: { type: ["string", "null"] },
-          website: { type: ["string", "null"] },
-          contact_department: { type: ["string", "null"] },
-          contact_name: { type: ["string", "null"] },
-          email: { type: ["string", "null"] },
-          linkedin_url: { type: ["string", "null"] },
-          research_notes: { type: ["string", "null"] },
-          likely_need: { type: ["string", "null"] },
-          recommended_offer: { type: ["string", "null"] },
-          personalization_angle: { type: ["string", "null"] },
-          priority: { type: ["string", "null"] },
-          next_action: { type: ["string", "null"] },
-          source: { type: ["string", "null"] },
-          confidence: { type: ["number", "null"] },
-        },
-      },
+      items: crmLeadRowSchema(),
     },
   };
-}
-
-async function fetchPublicEmailCandidates(website) {
-  const rootUrl = cleanText(website);
-  if (!/^https?:\/\//i.test(rootUrl)) return [];
-
-  const candidates = [];
-  const urlsToTry = uniqueStrings([
-    rootUrl,
-    `${rootUrl.replace(/\/$/, "")}/contact`,
-    `${rootUrl.replace(/\/$/, "")}/contact-us`,
-    `${rootUrl.replace(/\/$/, "")}/about`,
-    `${rootUrl.replace(/\/$/, "")}/about-us`,
-  ]);
-
-  for (const url of urlsToTry) {
-    try {
-      const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 Codex Outreach Agent" } });
-      if (!response.ok) continue;
-      const html = await response.text();
-      const matches = html.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
-      for (const match of matches) {
-        const email = cleanText(match).toLowerCase();
-        if (isValidEmail(email)) candidates.push({ email, sourceUrl: url });
-      }
-    } catch (_error) {
-      // best-effort only
-    }
-  }
-
-  return candidates;
-}
-
-async function buildTravelReferralFallbackRows(runDate, neededCount = 0) {
-  const fallbackRows = [];
-  const limit = Math.max(0, Number(neededCount) || 0);
-  const seeds = TRAVEL_REFERRAL_SEEDS.slice(0, limit || TRAVEL_REFERRAL_SEEDS.length);
-
-  for (const seed of seeds) {
-    const emailCandidates = await fetchPublicEmailCandidates(seed.website);
-    const firstEmail = emailCandidates[0] || null;
-    fallbackRows.push({
-      lead_segment: "Network / Referral Partner",
-      organisation_name: seed.organisation_name,
-      country: seed.country,
-      city: seed.city,
-      website: seed.website,
-      contact_department: "Partnerships / Enquiries",
-      contact_name: null,
-      email: firstEmail ? firstEmail.email : null,
-      linkedin_url: null,
-      research_notes: `${seed.organisation_name} is a travel / volunteer travel / responsible tourism platform relevant to referral partnerships for PTP, PMRS and PEEP.${firstEmail ? ` Public email found: ${firstEmail.email}.` : " No public email verified yet."}`,
-      likely_need: "Fresh responsible travel or conservation programme partners for Asia listings and referrals",
-      recommended_offer: seed.recommended_offer,
-      personalization_angle: `${seed.organisation_name} already promotes travel or volunteer experiences, so a Perhentian conservation collaboration is a direct audience fit.`,
-      priority: "Priority B - 80/100",
-      next_action: "Review, verify contact route, then send tailored cold email",
-      source: uniqueStrings([
-        seed.source,
-        ...emailCandidates.map((item) => item.sourceUrl),
-      ]).join(" | "),
-      confidence: firstEmail ? 0.82 : 0.68,
-      run_date: runDate,
-    });
-  }
-
-  return fallbackRows;
 }
 
 function fallbackMarketingResearchRows(runDate) {
@@ -950,258 +957,149 @@ function fallbackMarketingResearchRows(runDate) {
     {
       research_type: "Competitor Analysis",
       organisation: "Mowgli Venture",
-      offer: "Adventure, school, CSR and retreat packaging",
-      visible_price: "Pricing not public",
+      offer: "Adventure, school, corporate and outdoor experience packaging",
+      visible_price: "Research needed",
       country: "Malaysia",
       location: "Malaysia",
-      target_market: "Schools, corporates, adventure travellers",
-      category: "Adventure and eco-tourism operators",
+      target_market: "Schools, corporates, adventure groups",
+      category: "ESG/CSR related corporate programme",
       source_url: "https://mowgliventure.com/",
-      source: "https://mowgliventure.com/ | benchmark website",
-      strength: "Clear audience segmentation for group experiences",
-      risk: "Broader packaging for school and corporate buyers",
-      fe_response: "Sharpen FE landing pages for schools, CSR and volunteer pathways",
-      current_score: 82,
+      source: "https://mowgliventure.com/",
+      strength: "Broad packaging across adventure, groups and corporate positioning",
+      risk: "Can compete for school and corporate group attention if FE pages stay unclear",
+      fe_response: "Build separate school, CSR and conservation landing pages with clearer proof, pricing and enquiry CTAs",
+      current_score: 78,
       rating_band: "Strong competitor",
       trend: "Benchmark leader",
       active_marketing_score: 34,
-      momentum_score: 14,
+      momentum_score: 12,
       threat_level: "High",
       website_score: 12,
-      social_score: 11,
-      seo_aeo_score: 15,
-      youtube_score: 4,
-      cost_value_score: 6,
-      logistics_score: 7,
+      social_score: 10,
+      seo_aeo_score: 14,
+      youtube_score: 5,
+      cost_value_score: 7,
+      logistics_score: 6,
       trust_score: 6,
-      strategic_learning_score: 5,
-      most_active_channel: "Website / Instagram",
-      main_campaign_theme: "Adventure, schools, retreats",
-      keyword_notes: "Targets adventure, camp, retreat and experiential group intent",
-      aeo_notes: "Needs stronger direct answers but segmentation is clear",
-      backlink_notes: "Benchmark backlink review still needed",
-      social_notes: "Useful benchmark for audience-fit positioning",
-      website_change_notes: "Treat as named benchmark for weekly watch",
+      strategic_learning_score: 4,
+      most_active_channel: "Website / social",
+      main_campaign_theme: "Adventure and group experiences",
+      keyword_notes: "Track adventure Malaysia, corporate retreat Malaysia, outdoor education Malaysia, school camp Malaysia",
+      aeo_notes: "Compare whether their pages answer who it is for, location, itinerary, price and enquiry steps",
+      backlink_notes: "Check school, corporate, media and partner links weekly",
+      social_notes: "Review public Instagram, Facebook, LinkedIn and YouTube activity weekly",
+      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
       evidence_links: "https://mowgliventure.com/",
-      what_we_can_learn: "Audience-specific landing pages outperform one generic offer page",
-      how_we_are_better: "FE can lead on conservation authenticity if proof is shown clearly",
-      recommended_action: "Build separate FE pages for schools, CSR, and volunteer audiences",
-      confidence: 0.72,
+      what_we_can_learn: "Audience-specific pages make mixed offers easier to understand",
+      how_we_are_better: "FE can be stronger on conservation authenticity if impact proof is shown clearly",
+      recommended_action: "Create stronger school and CSR landing pages with proof, FAQs, pricing and clear enquiry buttons",
+      confidence: 0.55,
     },
     {
       research_type: "Competitor Analysis",
       organisation: "TRACC",
-      offer: "Marine conservation diving programmes",
-      visible_price: "Pricing not public",
+      offer: "Marine conservation and diving volunteer programme",
+      visible_price: "Research needed",
       country: "Malaysia",
-      location: "Borneo / Malaysia",
-      target_market: "Divers and marine conservation volunteers",
-      category: "Scuba diving volunteering projects",
+      location: "Sabah",
+      target_market: "Divers, marine volunteers, gap year travellers",
+      category: "Diving volunteer project",
       source_url: "https://tracc.org/",
-      source: "https://tracc.org/ | benchmark website",
-      strength: "Strong niche fit around diving conservation",
-      risk: "Can win specialist marine volunteer search intent",
-      fe_response: "Clarify FE marine conservation pathways and dive-related logistics",
-      current_score: 78,
-      rating_band: "Strong competitor",
-      trend: "Stable",
-      active_marketing_score: 27,
-      momentum_score: 11,
-      threat_level: "High",
-      website_score: 11,
-      social_score: 9,
-      seo_aeo_score: 14,
-      youtube_score: 4,
-      cost_value_score: 6,
+      source: "https://tracc.org/",
+      strength: "Clear dive-based conservation niche",
+      risk: "Strong fit for divers comparing marine conservation options",
+      fe_response: "Make FE diving and marine conservation value clearer with certification requirements and included activities",
+      current_score: 72,
+      rating_band: "Moderate competitor",
+      trend: "Needs review",
+      active_marketing_score: 25,
+      momentum_score: 8,
+      threat_level: "Medium",
+      website_score: 10,
+      social_score: 8,
+      seo_aeo_score: 13,
+      youtube_score: 6,
+      cost_value_score: 7,
       logistics_score: 6,
-      trust_score: 7,
+      trust_score: 6,
       strategic_learning_score: 4,
       most_active_channel: "Website",
-      main_campaign_theme: "Marine conservation volunteering",
-      keyword_notes: "marine conservation diving, scuba volunteer Malaysia",
-      aeo_notes: "Needs direct answers on costs, certification and logistics",
-      backlink_notes: "Marine niche links likely matter more than raw volume",
-      social_notes: "Proof-led marine content likely converts better than generic eco copy",
-      website_change_notes: "Monitor for changes to diving and reef pages",
+      main_campaign_theme: "Marine conservation diving",
+      keyword_notes: "Track scuba diving volunteer Malaysia, coral reef conservation volunteer, marine conservation diving",
+      aeo_notes: "Compare answers on dive requirements, safety, accommodation, food and conservation activities",
+      backlink_notes: "Review conservation and diving backlinks",
+      social_notes: "Check public social/video activity weekly",
+      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
       evidence_links: "https://tracc.org/",
-      what_we_can_learn: "Specialist niche pages can dominate search intent even with smaller brands",
-      how_we_are_better: "FE can package Perhentian-specific conservation story more clearly",
-      recommended_action: "Build FE pages around Perhentian turtle, reef and volunteer outcomes",
-      confidence: 0.68,
+      what_we_can_learn: "A specialist diving niche is easy to position and search for",
+      how_we_are_better: "FE can combine turtle, island, education and community impact in one stronger pathway",
+      recommended_action: "Split FE marine volunteering and diving-related offers into clearer comparison rows",
+      confidence: 0.55,
     },
     {
       research_type: "Competitor Analysis",
       organisation: "SEATRU",
-      offer: "Sea turtle volunteering",
-      visible_price: "Pricing not public",
+      offer: "Sea turtle conservation volunteering",
+      visible_price: "Research needed",
       country: "Malaysia",
-      location: "Malaysia",
-      target_market: "Turtle volunteers and conservation supporters",
-      category: "Turtle volunteering projects",
+      location: "Terengganu",
+      target_market: "Turtle volunteers, students, conservation supporters",
+      category: "Turtle Volunteer project",
       source_url: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      source: "https://seatru.umt.edu.my/volunteer-registration-2/ | benchmark website",
-      strength: "Clear turtle-conservation relevance and university affiliation",
-      risk: "University credibility can improve trust for turtle-focused volunteers",
-      fe_response: "Show stronger turtle project proof, impact and seasonal join details",
-      current_score: 74,
-      rating_band: "Moderate competitor",
-      trend: "Stable",
-      active_marketing_score: 19,
+      source: "https://seatru.umt.edu.my/volunteer-registration-2/",
+      strength: "University-linked turtle conservation credibility",
+      risk: "Strong trust signal for turtle-specific volunteer searches",
+      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly",
+      current_score: 76,
+      rating_band: "Strong competitor",
+      trend: "Benchmark leader",
+      active_marketing_score: 22,
       momentum_score: 7,
-      threat_level: "Medium",
-      website_score: 10,
-      social_score: 7,
-      seo_aeo_score: 13,
-      youtube_score: 2,
-      cost_value_score: 5,
-      logistics_score: 5,
+      threat_level: "High",
+      website_score: 11,
+      social_score: 6,
+      seo_aeo_score: 15,
+      youtube_score: 4,
+      cost_value_score: 7,
+      logistics_score: 6,
       trust_score: 7,
       strategic_learning_score: 4,
       most_active_channel: "Website",
-      main_campaign_theme: "Sea turtle volunteering",
-      keyword_notes: "sea turtle volunteering Malaysia, turtle conservation volunteer",
-      aeo_notes: "Add direct answers for season, location, price and volunteer tasks",
-      backlink_notes: "University-linked authority may support trust",
-      social_notes: "Lower activity but credibility still matters",
-      website_change_notes: "Track volunteer-registration page changes each week",
+      main_campaign_theme: "Turtle conservation volunteering",
+      keyword_notes: "Track turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer Malaysia",
+      aeo_notes: "Compare direct answers on turtle season, volunteer duties, cost, dates and how to apply",
+      backlink_notes: "University authority is a strong trust signal",
+      social_notes: "Check public social activity weekly",
+      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
       evidence_links: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      what_we_can_learn: "Academic credibility and turtle specificity strengthen trust quickly",
-      how_we_are_better: "FE can show richer local logistics and volunteer storytelling",
-      recommended_action: "Create stronger turtle FAQ and seasonal landing page",
-      confidence: 0.66,
-    },
-    {
-      research_type: "Competitor Analysis",
-      organisation: "Biji-Biji Initiative",
-      offer: "CSR and impact activities",
-      visible_price: "Pricing not public",
-      country: "Malaysia",
-      location: "Kuala Lumpur",
-      target_market: "Corporates and CSR buyers",
-      category: "Corporate CSR activities in Malaysia",
-      source_url: "https://www.biji-biji.com/",
-      source: "https://www.biji-biji.com/ | benchmark website",
-      strength: "Easy CSR positioning and corporate-friendly language",
-      risk: "Can win CSR leads if FE business case is unclear",
-      fe_response: "Build FE corporate page with outcomes, safety, logistics and reporting",
-      current_score: 76,
-      rating_band: "Strong competitor",
-      trend: "Emerging threat",
-      active_marketing_score: 29,
-      momentum_score: 12,
-      threat_level: "High",
-      website_score: 11,
-      social_score: 9,
-      seo_aeo_score: 12,
-      youtube_score: 3,
-      cost_value_score: 6,
-      logistics_score: 6,
-      trust_score: 7,
-      strategic_learning_score: 5,
-      most_active_channel: "Website / LinkedIn",
-      main_campaign_theme: "Corporate impact activities",
-      keyword_notes: "CSR Malaysia, impact workshops, sustainability programmes",
-      aeo_notes: "Needs strong answer blocks for team outcomes and logistics",
-      backlink_notes: "Corporate partner proof matters more than sheer volume",
-      social_notes: "LinkedIn-style messaging likely supports B2B credibility",
-      website_change_notes: "Watch corporate offer and partnership proof",
-      evidence_links: "https://www.biji-biji.com/",
-      what_we_can_learn: "Corporate buyers respond to business-case clarity, not just mission",
-      how_we_are_better: "FE can differentiate with field-based conservation delivery",
-      recommended_action: "Publish FE CSR pages with itinerary, outcomes and proof",
-      confidence: 0.7,
+      what_we_can_learn: "Academic and conservation credibility reduces buyer anxiety",
+      how_we_are_better: "FE can package conservation with broader island experience and school/corporate pathways",
+      recommended_action: "Add stronger turtle volunteering FAQs and evidence of impact on the FE app/site",
+      confidence: 0.55,
     },
     {
       research_type: "Price Comparison",
-      organisation: "Market benchmark",
+      organisation: "Fuze Ecoteer",
       offer: "Turtle Volunteer project",
-      visible_price: "Research needed",
-      country: "Malaysia / Southeast Asia",
-      target_market: "Volunteer travellers",
-      category: "Turtle Volunteer project",
-      source: "Search phrases: sea turtle volunteering Malaysia, turtle conservation volunteer Southeast Asia",
-      strength: "High-interest conservation niche",
-      risk: "Competitors with clearer pricing and logistics can convert faster",
-      fe_response: "Add exact inclusions, timing and proof to FE turtle pages",
-      current_score: 64,
-      rating_band: "Moderate competitor",
-      trend: "Opportunity to beat",
-      active_marketing_score: 20,
-      momentum_score: 7,
-      threat_level: "Medium",
-      keyword_notes: "turtle volunteering Malaysia, turtle conservation volunteer Asia",
-      aeo_notes: "Answer season, tasks, accommodation, food, transfers and cost",
-      recommended_action: "Create FE turtle pricing comparison block and FAQ",
-      confidence: 0.52,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "Diving volunteer project",
-      visible_price: "Research needed",
-      country: "Malaysia / Southeast Asia",
-      target_market: "Divers and marine conservation volunteers",
-      category: "Diving volunteer project",
-      source: "Search phrases: scuba diving volunteer Malaysia, marine conservation diving volunteer Southeast Asia",
-      strength: "Highly specific search intent with strong visual appeal",
-      risk: "Dive-certification and cost questions can block enquiries if unclear",
-      fe_response: "Clarify FE dive requirements, conservation tasks and logistics",
-      current_score: 66,
-      rating_band: "Moderate competitor",
-      trend: "Opportunity to beat",
-      active_marketing_score: 21,
-      momentum_score: 8,
-      threat_level: "Medium",
-      keyword_notes: "scuba diving volunteer Malaysia, coral reef volunteer",
-      aeo_notes: "Answer certification, safety, accommodation, meals, impact and price",
-      recommended_action: "Publish a dive-specific FE landing page with clear answers",
-      confidence: 0.52,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "3d2n eco package",
-      visible_price: "Research needed",
+      visible_price: "Use current FE fees",
       country: "Malaysia",
-      target_market: "Short-break eco travellers",
-      category: "3d2n eco package",
-      source: "Search phrases: eco package Malaysia, conservation weekend Malaysia",
-      strength: "Easier entry-point product for broader demand",
-      risk: "Looks generic if conservation angle and itinerary are vague",
-      fe_response: "Show exact itinerary, impact and inclusions",
-      current_score: 58,
-      rating_band: "Weak online presence",
+      location: "Perhentian / Malaysia",
+      target_market: "Volunteers, schools, corporates",
+      category: "Turtle Volunteer project",
+      source: "Internal FE pricing and website review",
+      strength: "Authentic conservation and local delivery",
+      risk: "Value is harder to compare if price, inclusions and proof are unclear",
+      fe_response: "Make pricing, inclusions, impact and next step clearer",
+      current_score: 68,
+      rating_band: "Moderate competitor",
       trend: "Opportunity to beat",
-      active_marketing_score: 16,
-      momentum_score: 5,
-      threat_level: "Low",
-      keyword_notes: "eco package Malaysia, responsible travel Malaysia",
-      aeo_notes: "Answer inclusions, itinerary, transfer, meals and conservation value",
-      recommended_action: "Create a sharper 3d2n FE package page with clear CTA",
-      confidence: 0.48,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "Turtle necklace",
-      visible_price: "Research needed",
-      country: "Malaysia / online",
-      target_market: "Supporters and gift buyers",
-      category: "Turtle necklace",
-      source: "Search phrases: turtle necklace conservation, wildlife gift conservation Malaysia",
-      strength: "Good low-ticket supporter product if story is strong",
-      risk: "Can feel generic without impact proof and design story",
-      fe_response: "Tie product page to turtle conservation impact and gifting angle",
-      current_score: 54,
-      rating_band: "Weak online presence",
-      trend: "Opportunity to beat",
-      active_marketing_score: 14,
-      momentum_score: 4,
-      threat_level: "Low",
-      keyword_notes: "turtle necklace, conservation gift, wildlife jewellery",
-      aeo_notes: "Answer materials, impact, shipping and purpose",
-      recommended_action: "Build product page with conservation proof, photos and FAQ",
-      confidence: 0.45,
+      active_marketing_score: 22,
+      momentum_score: 8,
+      threat_level: "Internal opportunity",
+      what_we_can_learn: "Price rows need exact inclusions and proof, not just a number",
+      how_we_are_better: "FE has direct project credibility and can show real outcomes",
+      recommended_action: "Create one price comparison block per FE product type",
+      confidence: 0.5,
     },
     {
       research_type: "Price Comparison",
@@ -1562,39 +1460,57 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
     let remainingForSegment = item.count;
     let batchNumber = 0;
     while (remainingForSegment > 0) {
-      const batchSize = Math.min(CRM_BATCH_SIZE, remainingForSegment);
+      const requestedBatchSize = Math.min(CRM_BATCH_SIZE, remainingForSegment);
       batchNumber += 1;
-      try {
-        const segmentRows = await generateJsonRows({
-          label: `cold email CRM ${item.segment} batch ${batchNumber}`,
-          maxOutputTokens: 5000,
-          jsonSchema: crmLeadArraySchema(),
-          system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
-          prompt: [
-            briefPrompt || [
-              `Run date: ${runDate}.`,
-              "Create CRM prospect rows for Fuze Ecoteer.",
-              "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
-            ].join("\n"),
-            "",
-            `For this pass, return exactly ${batchSize} rows for lead_segment: ${item.segment}.`,
-            `This is batch ${batchNumber} for ${item.segment}. Segment target: ${targets[item.segment] || 0}. Existing CRM count in this segment: ${existingSnapshot.counts[item.segment] || 0}. Planned new rows for this run in this segment: ${item.count}.`,
-            `Every returned row must have lead_segment exactly set to: ${item.segment}.`,
-            segmentSpecificPrompt(item.segment),
-            existingOrgPrompt(existingSnapshot.existingNames[item.segment]),
-            "Return one object per real organisation.",
-            "Return a JSON array only. Do not include markdown, code fences, comments, or commentary.",
-            "Keep string fields short and stable. Avoid long paragraphs and keep each string field under 120 characters where possible.",
-            "If you cannot verify a public email, set email to null. Never invent or guess an email address.",
-            "Do not put commas, URLs, organisation names, or notes into lead_segment. lead_segment must exactly equal the requested segment string and nothing else.",
-            "Do not return duplicate organisations within this batch.",
-          ].filter(Boolean).join("\n"),
-        });
-        rows.push(...segmentRows);
-      } catch (error) {
-        warnings.push(`Segment ${item.segment} batch ${batchNumber} failed: ${error.message}`);
+      let batchSucceeded = false;
+      let lastError = null;
+
+      for (const attemptSize of crmBatchAttemptSizes(requestedBatchSize)) {
+        try {
+          const segmentRows = await generateJsonRows({
+            label: `cold email CRM ${item.segment} batch ${batchNumber} size ${attemptSize}`,
+            maxOutputTokens: Math.min(7000, Math.max(2500, attemptSize * 240)),
+            jsonSchema: crmLeadArraySchema(),
+            system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
+            prompt: [
+              briefPrompt || [
+                `Run date: ${runDate}.`,
+                "Create CRM prospect rows for Fuze Ecoteer.",
+                "Do not invent emails. Keep email null unless it is a public email you actually found and cited.",
+              ].join("\n"),
+              "",
+              `For this pass, return exactly ${attemptSize} rows for lead_segment: ${item.segment}.`,
+              `This is batch ${batchNumber} for ${item.segment}. Segment target: ${targets[item.segment] || 0}. Existing CRM count in this segment: ${existingSnapshot.counts[item.segment] || 0}. Planned new rows for this run in this segment: ${item.count}.`,
+              `Every returned row must have lead_segment exactly set to: ${item.segment}.`,
+              segmentSpecificPrompt(item.segment),
+              existingOrgPrompt(existingSnapshot.existingNames[item.segment]),
+              "Return one object per real organisation.",
+              "Return a JSON array only. Do not include markdown, code fences, comments, or commentary.",
+              "Keep all fields concise. Keep research_notes under 700 characters. Keep all other string fields under 140 characters.",
+              "If you cannot verify a public email, set email to null. Never invent or guess an email address.",
+              "Do not put commas, URLs, organisation names, or notes into lead_segment. lead_segment must exactly equal the requested segment string and nothing else.",
+              "Do not return duplicate organisations within this batch.",
+            ].filter(Boolean).join("\n"),
+          });
+          rows.push(...segmentRows);
+          remainingForSegment -= Math.max(1, segmentRows.length || attemptSize);
+          batchSucceeded = true;
+          if (attemptSize !== requestedBatchSize) {
+            warnings.push(`Segment ${item.segment} batch ${batchNumber} succeeded after retry with smaller batch size ${attemptSize}.`);
+          }
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attemptSize !== crmBatchAttemptSizes(requestedBatchSize).slice(-1)[0]) {
+            warnings.push(`Segment ${item.segment} batch ${batchNumber} retry at size ${attemptSize} failed: ${error.message}`);
+          }
+        }
       }
-      remainingForSegment -= batchSize;
+
+      if (!batchSucceeded) {
+        warnings.push(`Segment ${item.segment} batch ${batchNumber} failed after retries: ${lastError ? lastError.message : "unknown error"}`);
+        remainingForSegment -= requestedBatchSize;
+      }
     }
   }
 
@@ -1614,9 +1530,11 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
     warnings.push(`Travel fallback added ${normalizedFallback.length} seeded referral lead(s) because only ${currentTravelCount} travel rows were generated.`);
   }
 
+  const deduped = dedupeRowsByKey(normalized);
+
   if (dryRun) {
     return {
-      rows: normalized,
+      rows: deduped,
       saved: [],
       warning: warnings.join(" | ") || null,
       existingCounts: existingSnapshot.counts,
@@ -1624,9 +1542,9 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
       plan,
     };
   }
-  const saved = await upsertRows("marketing_cold_email_leads", normalized, "lead_segment,organisation_name,country");
+  const saved = await upsertRows("marketing_cold_email_leads", deduped, "lead_segment,organisation_name,country");
   return {
-    rows: normalized,
+    rows: deduped,
     saved,
     warning: warnings.join(" | ") || null,
     existingCounts: existingSnapshot.counts,
