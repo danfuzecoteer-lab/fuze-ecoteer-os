@@ -2,6 +2,8 @@ name: Marketing CRM Update
 
 on:
   schedule:
+    # Sunday 11:07 PM Asia/Kuala_Lumpur. Weekly CRM cold-email research.
+    - cron: "7 15 * * 0"
     # Monday 9:17 AM Asia/Kuala_Lumpur.
     - cron: "17 1 * * 1"
   workflow_dispatch:
@@ -20,6 +22,8 @@ jobs:
       GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CRM_RESEARCH_LIMIT: "2500"
+      CRM_BATCH_SIZE: "30"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
