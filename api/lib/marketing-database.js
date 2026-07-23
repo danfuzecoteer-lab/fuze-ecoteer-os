@@ -37,13 +37,13 @@ function extractTopLevelJsonObjects(candidate) {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (char === "\"") {
+      } else if (char === '"') {
         inString = false;
       }
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       inString = true;
       continue;
     }
@@ -626,41 +626,34 @@ function dedupeRowsByKey(rows) {
 }
 
 async function fetchExistingColdEmailLeadsSnapshot() {
-  const rows = await selectAllColdEmailLeadRows();
-  const counts = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, 0]));
-  const existingNames = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, new Set()]));
+  const rows = await selectRows("marketing_cold_email_leads", [
+    ["select", "lead_segment,organisation_name,country,email,last_drafted_at,status"],
+    ["limit", "20000"],
+  ]);
 
+  const counts = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, 0]));
+  const existingNames = Object.fromEntries(CRM_SEGMENTS.map((segment) => [segment, []]));
   for (const row of rows) {
     const segment = cleanText(row.lead_segment);
-    if (!counts[segment] && counts[segment] !== 0) continue;
-    counts[segment] += 1;
+    if (!CRM_SEGMENTS.includes(segment)) continue;
+    counts[segment] = (counts[segment] || 0) + 1;
     const name = cleanText(row.organisation_name);
-    if (name) existingNames[segment].add(name);
+    if (name) existingNames[segment].push(name);
   }
 
   return {
-    rows,
     counts,
-    existingNames: Object.fromEntries(
-      Object.entries(existingNames).map(([segment, names]) => [segment, [...names]])
-    ),
+    existingNames,
+    rows,
   };
 }
 
-async function selectAllColdEmailLeadRows() {
-  return selectRows("marketing_cold_email_leads", [
-    ["select", "lead_segment,organisation_name,country,email,last_drafted_at,status"],
-    ["limit", "30000"],
-  ]);
-}
-
-function existingOrgPrompt(existingNames = [], maxNames = 120) {
-  const names = existingNames
-    .map((name) => cleanText(name))
-    .filter(Boolean)
-    .slice(0, maxNames);
-  if (!names.length) return "";
-  return `Do not return these organisations because they are already in the CRM: ${names.join("; ")}.`;
+function existingOrgPrompt(names, maxNames = 160) {
+  const uniqueNames = [...new Set((names || []).map((name) => cleanText(name)).filter(Boolean))];
+  if (!uniqueNames.length) return "";
+  return uniqueNames
+    .slice(0, maxNames)
+    .join("; ");
 }
 
 function combinedLeadText(row) {
@@ -680,33 +673,72 @@ function combinedLeadText(row) {
   ].join(" ").toLowerCase();
 }
 
+function primaryLeadSignalText(row) {
+  return [
+    cleanText(row.lead_segment || row.segment || row.type),
+    cleanText(row.organisation_name || row.organisation || row.company || row.school || row.name),
+    cleanText(row.website || row.url || row.link),
+    cleanText(row.contact_department || row.department),
+    cleanText(row.source),
+  ].join(" ").toLowerCase();
+}
+
 function includesAny(text, terms) {
   return terms.some((term) => text.includes(String(term).toLowerCase()));
 }
 
+function countMatches(text, terms) {
+  return terms.reduce((count, term) => count + (text.includes(String(term).toLowerCase()) ? 1 : 0), 0);
+}
+
 function isTravelReferralLead(row) {
   const text = combinedLeadText(row);
-  return includesAny(text, TRAVEL_REFERRAL_TERMS) && !includesAny(text, EDUCATION_TERMS) && !includesAny(text, CORPORATE_TERMS);
+  const primary = primaryLeadSignalText(row);
+  const positive = countMatches(text, TRAVEL_REFERRAL_TERMS);
+  const positivePrimary = countMatches(primary, TRAVEL_REFERRAL_TERMS);
+  const educationPrimary = countMatches(primary, EDUCATION_TERMS);
+  const corporatePrimary = countMatches(primary, CORPORATE_TERMS);
+  return (positivePrimary >= 1 || positive >= 2) && educationPrimary === 0 && corporatePrimary === 0;
 }
 
 function isCorporateLead(row) {
   const text = combinedLeadText(row);
-  return includesAny(text, CORPORATE_TERMS) && !includesAny(text, EDUCATION_TERMS);
+  const primary = primaryLeadSignalText(row);
+  const positive = countMatches(text, CORPORATE_TERMS);
+  const positivePrimary = countMatches(primary, CORPORATE_TERMS);
+  const educationPrimary = countMatches(primary, EDUCATION_TERMS);
+  return (positivePrimary >= 1 || positive >= 2) && educationPrimary === 0;
 }
 
 function isUniversityLead(row) {
   const text = combinedLeadText(row);
-  return includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
+  const primary = primaryLeadSignalText(row);
+  const positive = countMatches(text, UNIVERSITY_TERMS);
+  const positivePrimary = countMatches(primary, UNIVERSITY_TERMS);
+  const preschoolPrimary = countMatches(primary, PRESCHOOL_TERMS);
+  const corporatePrimary = countMatches(primary, CORPORATE_TERMS);
+  return (positivePrimary >= 1 || positive >= 2) && preschoolPrimary === 0 && corporatePrimary === 0;
 }
 
 function isPreschoolLead(row) {
   const text = combinedLeadText(row);
-  return includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, CORPORATE_TERMS);
+  const primary = primaryLeadSignalText(row);
+  const positive = countMatches(text, PRESCHOOL_TERMS);
+  const positivePrimary = countMatches(primary, PRESCHOOL_TERMS);
+  const universityPrimary = countMatches(primary, UNIVERSITY_TERMS);
+  const corporatePrimary = countMatches(primary, CORPORATE_TERMS);
+  return (positivePrimary >= 1 || positive >= 2) && universityPrimary === 0 && corporatePrimary === 0;
 }
 
 function isSchoolLead(row) {
   const text = combinedLeadText(row);
-  return includesAny(text, SCHOOL_TERMS) && !includesAny(text, UNIVERSITY_TERMS) && !includesAny(text, PRESCHOOL_TERMS) && !includesAny(text, CORPORATE_TERMS);
+  const primary = primaryLeadSignalText(row);
+  const positive = countMatches(text, SCHOOL_TERMS);
+  const positivePrimary = countMatches(primary, SCHOOL_TERMS);
+  const universityPrimary = countMatches(primary, UNIVERSITY_TERMS);
+  const preschoolPrimary = countMatches(primary, PRESCHOOL_TERMS);
+  const corporatePrimary = countMatches(primary, CORPORATE_TERMS);
+  return (positivePrimary >= 1 || positive >= 2) && universityPrimary === 0 && preschoolPrimary === 0 && corporatePrimary === 0;
 }
 
 async function fetchTravelSeedEvidence(seed) {
@@ -778,389 +810,151 @@ async function buildTravelReferralFallbackRows(runDate, neededCount) {
       priority: email ? "Priority B - 80/100" : "Nurture - 55/100",
       next_action: email ? "send tailored cold email" : "verify public contact email",
       source: `${seed.source} | ${checkedSource}${email ? ` | public email verified: ${email}` : ""}`,
-      confidence: email ? 0.82 : 0.58,
+      confidence: email ? 0.82 : 0.56,
     });
   }
   return rows;
 }
 
-function cleanConfidence(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  return Math.max(0, Math.min(1, number));
-}
-
-function cleanNumber(value, fallback = null) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return number;
-}
-
-function cleanScore(value, max = 100) {
-  const number = cleanNumber(value);
-  if (number === null) return null;
-  return Math.max(0, Math.min(max, Math.round(number)));
-}
-
-function readAutomationBrief(name) {
-  const briefPath = path.join(process.cwd(), "automation-briefs", `${name}.md`);
-  try {
-    return fs.readFileSync(briefPath, "utf8").trim();
-  } catch (error) {
-    return "";
-  }
-}
-
-function compactDetails(row) {
-  const parts = [
-    row.current_score !== null && row.current_score !== undefined ? `Score: ${row.current_score}/100` : "",
-    row.rating_band ? `Band: ${row.rating_band}` : "",
-    row.trend ? `Trend: ${row.trend}` : "",
-    row.active_marketing_score !== null && row.active_marketing_score !== undefined ? `Active marketing: ${row.active_marketing_score}/50` : "",
-    row.momentum_score !== null && row.momentum_score !== undefined ? `Momentum: ${row.momentum_score}/20` : "",
-    row.threat_level ? `Threat: ${row.threat_level}` : "",
-    row.most_active_channel ? `Channel: ${row.most_active_channel}` : "",
-    row.main_campaign_theme ? `Campaign: ${row.main_campaign_theme}` : "",
-    row.what_we_can_learn ? `Learn: ${row.what_we_can_learn}` : "",
-    row.how_we_are_better ? `FE better: ${row.how_we_are_better}` : "",
-    row.recommended_action ? `Action: ${row.recommended_action}` : "",
-  ].filter(Boolean);
-  return parts.join(" | ");
-}
-
-async function generateJsonRows({ system, prompt, label, maxOutputTokens = 4000, jsonSchema = null }) {
-  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 150000);
-  const body = {
-    model,
-    input: [
-      {
-        role: "system",
-        content: system || "Return only valid JSON. Do not include markdown, comments, or prose.",
-      },
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    max_output_tokens: maxOutputTokens,
-  };
-
-  if (jsonSchema && jsonSchema.name && jsonSchema.schema) {
-    body.text = {
-      format: {
-        type: "json_schema",
-        name: jsonSchema.name,
-        schema: jsonSchema.schema,
-        strict: true,
-      },
-    };
-  }
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    signal: controller.signal,
-    headers: {
-      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  }).finally(() => clearTimeout(timeout));
-
-  if (!response.ok) {
-    throw new Error(`OpenAI ${label} generation failed: ${await response.text()}`);
-  }
-
-  const data = await response.json();
-  const text = data.output_text || (data.output || [])
-    .flatMap((item) => item.content || [])
-    .filter((content) => content.type === "output_text")
-    .map((content) => content.text)
-    .join("\n");
-
-  return parseJsonRows(text, label);
-}
-
 function jsonStringOrNullSchema() {
   return {
-    anyOf: [
+    oneOf: [
       { type: "string" },
       { type: "null" },
     ],
   };
 }
 
-function crmLeadRowSchema() {
+function crmLeadArraySchema() {
   return {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "lead_segment",
-      "organisation_name",
-      "country",
-      "city",
-      "website",
-      "contact_department",
-      "contact_name",
-      "email",
-      "linkedin_url",
-      "research_notes",
-      "likely_need",
-      "recommended_offer",
-      "personalization_angle",
-      "priority",
-      "next_action",
-      "source",
-      "confidence",
-    ],
-    properties: {
-      lead_segment: { type: "string" },
-      organisation_name: { type: "string" },
-      country: { type: "string" },
-      city: jsonStringOrNullSchema(),
-      website: jsonStringOrNullSchema(),
-      contact_department: jsonStringOrNullSchema(),
-      contact_name: jsonStringOrNullSchema(),
-      email: jsonStringOrNullSchema(),
-      linkedin_url: jsonStringOrNullSchema(),
-      research_notes: jsonStringOrNullSchema(),
-      likely_need: jsonStringOrNullSchema(),
-      recommended_offer: jsonStringOrNullSchema(),
-      personalization_angle: jsonStringOrNullSchema(),
-      priority: { type: "string" },
-      next_action: jsonStringOrNullSchema(),
-      source: jsonStringOrNullSchema(),
-      confidence: {
-        anyOf: [
-          { type: "number" },
-          { type: "string" },
-          { type: "null" },
-        ],
+    type: "array",
+    items: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "lead_segment",
+        "organisation_name",
+        "country",
+        "city",
+        "website",
+        "contact_department",
+        "contact_name",
+        "email",
+        "linkedin_url",
+        "research_notes",
+        "likely_need",
+        "recommended_offer",
+        "personalization_angle",
+        "priority",
+        "next_action",
+        "source",
+        "confidence",
+      ],
+      properties: {
+        lead_segment: { type: "string" },
+        organisation_name: { type: "string" },
+        country: { type: "string" },
+        city: jsonStringOrNullSchema(),
+        website: jsonStringOrNullSchema(),
+        contact_department: jsonStringOrNullSchema(),
+        contact_name: jsonStringOrNullSchema(),
+        email: jsonStringOrNullSchema(),
+        linkedin_url: jsonStringOrNullSchema(),
+        research_notes: jsonStringOrNullSchema(),
+        likely_need: jsonStringOrNullSchema(),
+        recommended_offer: jsonStringOrNullSchema(),
+        personalization_angle: jsonStringOrNullSchema(),
+        priority: { type: "string" },
+        next_action: jsonStringOrNullSchema(),
+        source: jsonStringOrNullSchema(),
+        confidence: {
+          oneOf: [
+            { type: "number" },
+            { type: "string" },
+            { type: "null" },
+          ],
+        },
       },
     },
   };
 }
 
-function crmLeadArraySchema() {
-  return {
-    name: "crm_lead_rows",
-    schema: {
-      type: "array",
-      items: crmLeadRowSchema(),
-    },
-  };
+function readAutomationBrief(slug) {
+  const localPath = path.join(process.cwd(), "automation-briefs", `${slug}.md`);
+  if (fs.existsSync(localPath)) return fs.readFileSync(localPath, "utf8");
+  const altPath = path.join(__dirname, "..", "..", "automation-briefs", `${slug}.md`);
+  if (fs.existsSync(altPath)) return fs.readFileSync(altPath, "utf8");
+  return "";
 }
 
-function fallbackMarketingResearchRows(runDate) {
-  return [
-    {
-      research_type: "Competitor Analysis",
-      organisation: "Mowgli Venture",
-      offer: "Adventure, school, corporate and outdoor experience packaging",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      location: "Malaysia",
-      target_market: "Schools, corporates, adventure groups",
-      category: "ESG/CSR related corporate programme",
-      source_url: "https://mowgliventure.com/",
-      source: "https://mowgliventure.com/",
-      strength: "Broad packaging across adventure, groups and corporate positioning",
-      risk: "Can compete for school and corporate group attention if FE pages stay unclear",
-      fe_response: "Build separate school, CSR and conservation landing pages with clearer proof, pricing and enquiry CTAs",
-      current_score: 78,
-      rating_band: "Strong competitor",
-      trend: "Benchmark leader",
-      active_marketing_score: 34,
-      momentum_score: 12,
-      threat_level: "High",
-      website_score: 12,
-      social_score: 10,
-      seo_aeo_score: 14,
-      youtube_score: 5,
-      cost_value_score: 7,
-      logistics_score: 6,
-      trust_score: 6,
-      strategic_learning_score: 4,
-      most_active_channel: "Website / social",
-      main_campaign_theme: "Adventure and group experiences",
-      keyword_notes: "Track adventure Malaysia, corporate retreat Malaysia, outdoor education Malaysia, school camp Malaysia",
-      aeo_notes: "Compare whether their pages answer who it is for, location, itinerary, price and enquiry steps",
-      backlink_notes: "Check school, corporate, media and partner links weekly",
-      social_notes: "Review public Instagram, Facebook, LinkedIn and YouTube activity weekly",
-      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
-      evidence_links: "https://mowgliventure.com/",
-      what_we_can_learn: "Audience-specific pages make mixed offers easier to understand",
-      how_we_are_better: "FE can be stronger on conservation authenticity if impact proof is shown clearly",
-      recommended_action: "Create stronger school and CSR landing pages with proof, FAQs, pricing and clear enquiry buttons",
-      confidence: 0.55,
+async function generateJsonRows({ label, prompt, system, jsonSchema, maxOutputTokens = 6000 }) {
+  const apiKey = requireEnv("OPENAI_API_KEY");
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const body = {
+    model,
+    input: [
+      system ? { role: "system", content: [{ type: "input_text", text: system }] } : null,
+      { role: "user", content: [{ type: "input_text", text: prompt }] },
+    ].filter(Boolean),
+    max_output_tokens: maxOutputTokens,
+    text: jsonSchema ? {
+      format: {
+        type: "json_schema",
+        name: `${label.replace(/[^a-z0-9]+/ig, "_")}_schema`,
+        schema: jsonSchema,
+      },
+    } : undefined,
+  };
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
     },
-    {
-      research_type: "Competitor Analysis",
-      organisation: "TRACC",
-      offer: "Marine conservation and diving volunteer programme",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      location: "Sabah",
-      target_market: "Divers, marine volunteers, gap year travellers",
-      category: "Diving volunteer project",
-      source_url: "https://tracc.org/",
-      source: "https://tracc.org/",
-      strength: "Clear dive-based conservation niche",
-      risk: "Strong fit for divers comparing marine conservation options",
-      fe_response: "Make FE diving and marine conservation value clearer with certification requirements and included activities",
-      current_score: 72,
-      rating_band: "Moderate competitor",
-      trend: "Needs review",
-      active_marketing_score: 25,
-      momentum_score: 8,
-      threat_level: "Medium",
-      website_score: 10,
-      social_score: 8,
-      seo_aeo_score: 13,
-      youtube_score: 6,
-      cost_value_score: 7,
-      logistics_score: 6,
-      trust_score: 6,
-      strategic_learning_score: 4,
-      most_active_channel: "Website",
-      main_campaign_theme: "Marine conservation diving",
-      keyword_notes: "Track scuba diving volunteer Malaysia, coral reef conservation volunteer, marine conservation diving",
-      aeo_notes: "Compare answers on dive requirements, safety, accommodation, food and conservation activities",
-      backlink_notes: "Review conservation and diving backlinks",
-      social_notes: "Check public social/video activity weekly",
-      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
-      evidence_links: "https://tracc.org/",
-      what_we_can_learn: "A specialist diving niche is easy to position and search for",
-      how_we_are_better: "FE can combine turtle, island, education and community impact in one stronger pathway",
-      recommended_action: "Split FE marine volunteering and diving-related offers into clearer comparison rows",
-      confidence: 0.55,
-    },
-    {
-      research_type: "Competitor Analysis",
-      organisation: "SEATRU",
-      offer: "Sea turtle conservation volunteering",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      location: "Terengganu",
-      target_market: "Turtle volunteers, students, conservation supporters",
-      category: "Turtle Volunteer project",
-      source_url: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      source: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      strength: "University-linked turtle conservation credibility",
-      risk: "Strong trust signal for turtle-specific volunteer searches",
-      fe_response: "Show FE turtle impact, safety, seasonality and team credibility more clearly",
-      current_score: 76,
-      rating_band: "Strong competitor",
-      trend: "Benchmark leader",
-      active_marketing_score: 22,
-      momentum_score: 7,
-      threat_level: "High",
-      website_score: 11,
-      social_score: 6,
-      seo_aeo_score: 15,
-      youtube_score: 4,
-      cost_value_score: 7,
-      logistics_score: 6,
-      trust_score: 7,
-      strategic_learning_score: 4,
-      most_active_channel: "Website",
-      main_campaign_theme: "Turtle conservation volunteering",
-      keyword_notes: "Track turtle volunteering Malaysia, sea turtle conservation volunteer, turtle hatchery volunteer Malaysia",
-      aeo_notes: "Compare direct answers on turtle season, volunteer duties, cost, dates and how to apply",
-      backlink_notes: "University authority is a strong trust signal",
-      social_notes: "Check public social activity weekly",
-      website_change_notes: "Fallback row created because OpenAI generation did not complete on the cloud runner",
-      evidence_links: "https://seatru.umt.edu.my/volunteer-registration-2/",
-      what_we_can_learn: "Academic and conservation credibility reduces buyer anxiety",
-      how_we_are_better: "FE can package conservation with broader island experience and school/corporate pathways",
-      recommended_action: "Add stronger turtle volunteering FAQs and evidence of impact on the FE app/site",
-      confidence: 0.55,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Fuze Ecoteer",
-      offer: "Turtle Volunteer project",
-      visible_price: "Use current FE fees",
-      country: "Malaysia",
-      location: "Perhentian / Malaysia",
-      target_market: "Volunteers, schools, corporates",
-      category: "Turtle Volunteer project",
-      source: "Internal FE pricing and website review",
-      strength: "Authentic conservation and local delivery",
-      risk: "Value is harder to compare if price, inclusions and proof are unclear",
-      fe_response: "Make pricing, inclusions, impact and next step clearer",
-      current_score: 68,
-      rating_band: "Moderate competitor",
-      trend: "Opportunity to beat",
-      active_marketing_score: 22,
-      momentum_score: 8,
-      threat_level: "Internal opportunity",
-      what_we_can_learn: "Price rows need exact inclusions and proof, not just a number",
-      how_we_are_better: "FE has direct project credibility and can show real outcomes",
-      recommended_action: "Create one price comparison block per FE product type",
-      confidence: 0.5,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "School camp 5d4n",
-      visible_price: "Research needed",
-      country: "Malaysia / Southeast Asia",
-      target_market: "Schools and international schools",
-      category: "School camp 5d4n",
-      source: "Search phrases: school camp Malaysia, outdoor education Malaysia, school service learning trips Asia",
-      strength: "Schools need clear itinerary, safety, learning outcomes and supervision",
-      risk: "Competitors can win if FE school pages are not ready",
-      fe_response: "Build a 5d4n school camp page before heavy outreach",
-      current_score: 62,
-      rating_band: "Moderate competitor",
-      trend: "Opportunity to beat",
-      active_marketing_score: 18,
-      momentum_score: 6,
-      threat_level: "Medium",
-      keyword_notes: "school camps Malaysia, outdoor education Malaysia, service learning trips Asia",
-      aeo_notes: "Answer itinerary, age range, safeguarding, outcomes, accommodation, meals and price",
-      recommended_action: "Create a complete school camp offer page and then feed it into the CRM outreach bot",
-      confidence: 0.5,
-    },
-    {
-      research_type: "Price Comparison",
-      organisation: "Market benchmark",
-      offer: "ESG/CSR related corporate programme",
-      visible_price: "Research needed",
-      country: "Malaysia",
-      target_market: "Corporate HR, CSR and ESG teams",
-      category: "ESG/CSR related corporate programme",
-      source: "Search phrases: corporate volunteering Malaysia, CSR activities Malaysia, ESG team building Malaysia",
-      strength: "Corporate buyers need business case, risk control, outcomes and reporting",
-      risk: "Biji-Biji and CSR activity providers can take corporate leads",
-      fe_response: "Create a corporate CSR landing page and LinkedIn content stream",
-      current_score: 60,
-      rating_band: "Moderate competitor",
-      trend: "Emerging threat",
-      active_marketing_score: 24,
-      momentum_score: 9,
-      threat_level: "High",
-      keyword_notes: "corporate volunteering Malaysia, CSR activities Malaysia, ESG team building Malaysia",
-      aeo_notes: "Answer team size, outcomes, reporting, safety, logistics, cost and impact",
-      recommended_action: "Prioritise CSR offer page and weekly corporate prospect research",
-      confidence: 0.5,
-    },
-  ].map((row) => ({ ...row, run_date: runDate }));
+    body: JSON.stringify(body),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`OpenAI ${label} failed: ${response.status} ${raw}`);
+  }
+
+  const parsed = JSON.parse(raw);
+  const text = parsed.output_text || "";
+  return parseJsonRows(text, label);
+}
+
+function cleanConfidence(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(1, num));
+}
+
+function compactDetails(values) {
+  return Object.entries(values)
+    .filter(([, value]) => value !== null && value !== undefined && `${value}`.trim() !== "")
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(" | ");
+}
+
+function cleanScore(value, max) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(max, Math.round(num)));
 }
 
 function normalizeMarketingResearch(row, runDate) {
-  const researchType = cleanText(row.research_type || row.type);
-  const currentScore = cleanScore(row.current_score || row.total_score);
+  const currentScore = cleanScore(row.current_score, 100);
+  const ratingBand = cleanText(row.rating_band || row.band);
+  const trend = cleanText(row.trend || row.status_label);
   const activeMarketingScore = cleanScore(row.active_marketing_score, 50);
   const momentumScore = cleanScore(row.momentum_score, 20);
-  const ratingBand = cleanText(row.rating_band);
-  const trend = cleanText(row.trend || row.status_label);
-  const threatLevel = cleanText(row.threat_level);
+  const threatLevel = cleanText(row.threat_level || row.threat);
   const whatWeCanLearn = cleanText(row.what_we_can_learn || row.learning);
-  const howWeAreBetter = cleanText(row.how_we_are_better || row.fe_advantage);
-  const recommendedAction = cleanText(row.recommended_action || row.action || row.fe_response);
+  const howWeAreBetter = cleanText(row.how_we_are_better || row.advantage);
+  const recommendedAction = cleanText(row.recommended_action || row.action);
   const evidenceLinks = Array.isArray(row.evidence_links) ? row.evidence_links.join(" | ") : cleanText(row.evidence_links);
   const enrichment = compactDetails({
     current_score: currentScore,
@@ -1176,7 +970,7 @@ function normalizeMarketingResearch(row, runDate) {
     recommended_action: recommendedAction,
   });
   return {
-    research_type: researchType === "Competitor Analysis" ? "Competitor Analysis" : "Price Comparison",
+    research_type: cleanText(row.research_type) === "Competitor Analysis" ? "Competitor Analysis" : "Price Comparison",
     organisation: cleanText(row.organisation || row.organisation_name || row.company || row.name),
     offer: cleanText(row.offer || row.programme || row.product),
     visible_price: cleanText(row.visible_price || row.price || row.pricing) || null,
