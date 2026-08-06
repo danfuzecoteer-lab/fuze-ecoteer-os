@@ -1,0 +1,37 @@
+name: Marketing CRM Discovery v2
+
+on:
+  schedule:
+    - cron: "7 15 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketing-crm-discovery-v2
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: gpt-5.4-mini
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+      GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+      GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+      GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
+      CRM_REPORT_TO: ${{ secrets.GMAIL_FROM }}
+      CRM_MAX_ROWS_PER_SEGMENT: "12"
+      CRM_MAX_EMAIL_SCANS: "250"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Discover and verify CRM leads
+        run: node scripts/run-crm-discovery-v2.js
