@@ -4,9 +4,14 @@ on:
   schedule:
     # Weekdays 8:07 AM Asia/Kuala_Lumpur.
     - cron: "7 0 * * 1-5"
-    # Weekdays 8:37 AM Asia/Kuala_Lumpur fallback.
-    - cron: "37 0 * * 1-5"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekday-outreach
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -30,6 +35,10 @@ jobs:
       GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CRM_TARGET_EMAIL_LEADS: "300"
+      CRM_MAX_TOP_UP_ROUNDS: "10"
+      CRM_EMAIL_DISCOVERY_MAX_SCANS: "250"
+      CRM_EXISTING_EMAIL_DISCOVERY_MAX_SCANS: "250"
     name: ${{ matrix.automation }}
     steps:
       - uses: actions/checkout@v4
