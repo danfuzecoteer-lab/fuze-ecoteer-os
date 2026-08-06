@@ -102,6 +102,9 @@ function isValidEmail(value) {
   if (/[\/\\]/.test(email)) return false;
   if (/\.(png|jpg|jpeg|gif|svg|webp|css|js|ico)$/i.test(email)) return false;
   if (email.includes("noreply") || email.includes("no-reply")) return false;
+  if (email.endsWith("@example.com") || email.endsWith("@example.org") || email.endsWith("@example.net")) return false;
+  if (email.endsWith(".ingest.sentry.io") || email.includes("sentry.io")) return false;
+  if (email.startsWith("test@") || email.startsWith("sample@") || email.startsWith("placeholder@")) return false;
   return true;
 }
 
@@ -780,6 +783,44 @@ async function fetchTravelSeedEvidence(seed) {
   };
 }
 
+async function enrichColdEmailLeadEmails(rows, maxScans = 250) {
+  const enriched = [];
+  let scans = 0;
+  for (const row of rows) {
+    if (scans >= Math.max(0, Number(maxScans) || 0)) {
+      enriched.push(row);
+      continue;
+    }
+    if (isValidEmail(row.email)) {
+      enriched.push(row);
+      continue;
+    }
+    const website = cleanText(row.website);
+    if (!website) {
+      enriched.push(row);
+      continue;
+    }
+    scans += 1;
+    const evidence = await fetchTravelSeedEvidence({
+      organisation_name: row.organisation_name,
+      website,
+    });
+    const email = evidence.emails.find((candidate) => isValidEmail(candidate)) || null;
+    if (!email) {
+      enriched.push(row);
+      continue;
+    }
+    enriched.push({
+      ...row,
+      email,
+      research_notes: [row.research_notes, `Public email found by scanning official website contact pages: ${email}`].filter(Boolean).join(" "),
+      source: [row.source, ...evidence.checkedUrls].filter(Boolean).join(" | "),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  return enriched;
+}
+
 async function buildTravelReferralFallbackRows(runDate, neededCount) {
   const rows = [];
   for (const seed of TRAVEL_REFERRAL_SEEDS.slice(0, neededCount)) {
@@ -1336,10 +1377,11 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
   }
 
   const deduped = dedupeRowsByKey(normalized);
+  const enriched = await enrichColdEmailLeadEmails(deduped, process.env.CRM_EMAIL_DISCOVERY_MAX_SCANS || 250);
 
   if (dryRun) {
     return {
-      rows: deduped,
+      rows: enriched,
       saved: [],
       warning: warnings.join(" | ") || null,
       existingCounts: existingSnapshot.counts,
@@ -1347,9 +1389,9 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
       plan,
     };
   }
-  const saved = await upsertRows("marketing_cold_email_leads", deduped, "lead_segment,organisation_name,country");
+  const saved = await upsertRows("marketing_cold_email_leads", enriched, "lead_segment,organisation_name,country");
   return {
-    rows: deduped,
+    rows: enriched,
     saved,
     warning: warnings.join(" | ") || null,
     existingCounts: existingSnapshot.counts,
