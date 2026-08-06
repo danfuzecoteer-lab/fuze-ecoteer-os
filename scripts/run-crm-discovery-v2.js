@@ -27,7 +27,7 @@ function parseJson(s) {
 }
 async function searchRows(segment, query, existing) {
   const prompt = [
-    "Find genuinely new public organisations for Fuze Ecoteer outreach.",
+    "Find up to " + (process.env.CRM_MAX_ROWS_PER_SEGMENT||100) + " genuinely new public organisations for Fuze Ecoteer outreach. Return as many distinct valid organisations as you can.",
     "Segment: " + segment,
     "Search terms: " + query,
     "Use public web search creatively: search engines, official websites, public social profiles, directories, chambers, tourism boards, school directories, association pages, PDFs, brochures, press releases, and contact pages.",
@@ -49,7 +49,7 @@ async function searchRows(segment, query, existing) {
       model:process.env.OPENAI_MODEL||"gpt-5.4-mini",
       input:prompt,
       tools:[{type:"web_search_preview"}],
-      max_output_tokens:6000
+      max_output_tokens:16000
     })
   });
   const raw=await response.text();
