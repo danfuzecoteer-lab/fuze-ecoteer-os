@@ -39,7 +39,7 @@ async function searchRows(segment, query, existing) {
     "Prefer small and medium organisations, not famous repeated brands.",
     "For every organisation provide the official website and the exact source URL where it was found. Do not invent emails. Email may be null.",
     "Do not return any organisation already in this list: " + existing.join("; "),
-    "Return JSON array only with keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
+    "Return a JSON object with a rows array. Each row must use keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
     "Use the exact requested segment. Keep each field concise."
   ].join("\n");
   const response = await fetch("https://api.openai.com/v1/responses", {
