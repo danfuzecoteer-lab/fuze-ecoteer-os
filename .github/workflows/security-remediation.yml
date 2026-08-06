@@ -19,7 +19,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SECURITY_TARGETS_JSON: ${{ secrets.SECURITY_TARGETS_JSON }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
+          SECURITY_REPORT_TO: ${{ secrets.SECURITY_REPORT_TO }}
           SECURITY_REMEDIATION_COMMAND: ${{ secrets.SECURITY_REMEDIATION_COMMAND }}
         run: |
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
