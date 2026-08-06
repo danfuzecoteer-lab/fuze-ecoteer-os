@@ -1096,6 +1096,13 @@ async function insertOptional(table, rows) {
   }
 }
 
+function hasUsableOrganisationEvidence(row) {
+  const organisation = cleanText(row.organisation_name || row.organisation || row.company || row.school || row.name);
+  const website = cleanText(row.website || row.url || row.link);
+  const source = cleanText(row.source || row.research_notes || row.notes || row.background);
+  return Boolean(organisation && (website || source));
+}
+
 function normalizeColdEmailLead(row, runDate) {
   const rawSegment = cleanText(row.lead_segment || row.segment || row.type);
   const lowerSegment = rawSegment.toLowerCase();
@@ -1154,15 +1161,15 @@ function normalizeColdEmailLead(row, runDate) {
     return null;
   }
 
-  if (segment === "University" && !isUniversityLead({ ...row, lead_segment: segment })) {
+  if (segment === "University" && !isUniversityLead({ ...row, lead_segment: segment }) && !(rawSegment === segment && hasUsableOrganisationEvidence(row))) {
     return null;
   }
 
-  if (segment === "Tadika / Preschool" && !isPreschoolLead({ ...row, lead_segment: segment })) {
+  if (segment === "Tadika / Preschool" && !isPreschoolLead({ ...row, lead_segment: segment }) && !(rawSegment === segment && hasUsableOrganisationEvidence(row))) {
     return null;
   }
 
-  if (segment === "School" && !isSchoolLead({ ...row, lead_segment: segment })) {
+  if (segment === "School" && !isSchoolLead({ ...row, lead_segment: segment }) && !(rawSegment === segment && hasUsableOrganisationEvidence(row))) {
     return null;
   }
 
