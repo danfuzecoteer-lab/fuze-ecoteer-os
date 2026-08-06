@@ -1314,7 +1314,7 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
   const normalized = dedupeRowsByKey(rows
     .map((row) => normalizeColdEmailLead(row, runDate))
     .filter((row) => row && row.organisation_name)
-    .filter((row) => !existingKeys.has([cleanText(row.lead_segment).toLowerCase(), cleanText(row.organisation_name).toLowerCase(), cleanText(row.country).toLowerCase()].join("|")));
+    .filter((row) => !existingKeys.has([cleanText(row.lead_segment).toLowerCase(), cleanText(row.organisation_name).toLowerCase(), cleanText(row.country).toLowerCase()].join("|"))));
 
   const currentTravelCount = normalized.filter((row) => row.lead_segment === "Network / Referral Partner").length;
   const travelPlan = plan.find((item) => item.segment === "Network / Referral Partner");
