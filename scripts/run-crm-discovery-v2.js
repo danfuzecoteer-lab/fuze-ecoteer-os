@@ -21,9 +21,10 @@ function validEmail(v) {
 function key(r) { return [text(r.lead_segment), text(r.organisation_name), text(r.country)].join("|").toLowerCase(); }
 function parseJson(s) {
   const t = text(s).replace(/^\uFEFF/, "");
-  const a = t.indexOf("["); const b = t.lastIndexOf("]");
-  if (a < 0 || b <= a) throw new Error("No JSON array returned");
-  return JSON.parse(t.slice(a, b + 1));
+  const direct = JSON.parse(t);
+  if (Array.isArray(direct)) return direct;
+  if (direct && Array.isArray(direct.rows)) return direct.rows;
+  throw new Error("No JSON rows returned");
 }
 async function searchRows(segment, query, existing) {
   const prompt = [
@@ -39,7 +40,7 @@ async function searchRows(segment, query, existing) {
     "Prefer small and medium organisations, not famous repeated brands.",
     "For every organisation provide the official website and the exact source URL where it was found. Do not invent emails. Email may be null.",
     "Do not return any organisation already in this list: " + existing.join("; "),
-    "Return JSON array only with keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
+    "Return a JSON object with a rows array. Each row must use keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
     "Use the exact requested segment. Keep each field concise."
   ].join("\n");
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -50,12 +51,14 @@ async function searchRows(segment, query, existing) {
       input:prompt,
       tools:[{type:"web_search_preview"}],
       text:{format:{type:"json_schema",name:"crm_leads",strict:true,schema:{
-        type:"array",items:{type:"object",additionalProperties:false,
-          required:["lead_segment","organisation_name","country","website","email","source"],
-          properties:{
-            lead_segment:{type:"string"},organisation_name:{type:"string"},country:{type:"string"},
-            website:{type:["string","null"]},email:{type:["string","null"]},source:{type:["string","null"]}
-          }
+        type:"object",additionalProperties:false,required:["rows"],properties:{
+          rows:{type:"array",items:{type:"object",additionalProperties:false,
+            required:["lead_segment","organisation_name","country","website","email","source"],
+            properties:{
+              lead_segment:{type:"string"},organisation_name:{type:"string"},country:{type:"string"},
+              website:{type:["string","null"]},email:{type:["string","null"]},source:{type:["string","null"]}
+            }
+          }}
         }
       }}},
       max_output_tokens:16000
