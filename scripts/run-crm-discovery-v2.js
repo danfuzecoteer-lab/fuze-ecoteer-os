@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { selectRows, upsertRows } = require("../api/lib/supabase-admin");
+const { selectRows, updateRows, upsertRows } = require("../api/lib/supabase-admin");
 const { sendEmail } = require("../api/lib/gmail");
 
 const TABLE = "marketing_cold_email_leads";
@@ -19,12 +19,24 @@ function validEmail(v) {
     && !/(example\.(com|org|net)|sentry\.io|noreply|no-reply|^test@|^sample@)/i.test(e);
 }
 function key(r) { return [text(r.lead_segment), text(r.organisation_name), text(r.country)].join("|").toLowerCase(); }
+function organisationKey(r) { return [text(r.organisation_name), text(r.country)].join("|").toLowerCase(); }
 function parseJson(s) {
   const t = text(s).replace(/^\uFEFF/, "");
   const direct = JSON.parse(t);
   if (Array.isArray(direct)) return direct;
   if (direct && Array.isArray(direct.rows)) return direct.rows;
   throw new Error("No JSON rows returned");
+}
+function classifyOrganisation(row, requestedSegment) {
+  const haystack = [row.organisation_name, row.organisation, row.company, row.name,
+    row.website, row.source, row.research_notes, row.likely_need].map(text).join(" ").toLowerCase();
+  const school = /\b(school|academy|kindergarten|preschool|pre-school|tadika|taska|montessori|institute|lycee|lycée|international school|boarding school|prep school)\b/i.test(haystack);
+  const university = /\b(university|universiti|college|faculty|campus)\b/i.test(haystack);
+  const preschool = /\b(preschool|pre-school|kindergarten|tadika|taska|montessori|nursery|early years)\b/i.test(haystack);
+  if (preschool) return "Tadika / Preschool";
+  if (university) return "University";
+  if (school) return "School";
+  return requestedSegment;
 }
 async function searchRows(segment, query, existing) {
   const prompt = [
@@ -92,8 +104,10 @@ async function pageEmails(website) {
 function normalize(r, segment, runDate) {
   const website=text(r.website||r.url||r.link)||null;
   const email=validEmail(r.email)?text(r.email).toLowerCase():null;
+  const organisation_name=text(r.organisation_name||r.organisation||r.company||r.name);
+  const finalSegment=classifyOrganisation({...r, organisation_name, website}, segment);
   return {
-    lead_segment:segment, organisation_name:text(r.organisation_name||r.organisation||r.company||r.name),
+    lead_segment:finalSegment, organisation_name,
     country:text(r.country)||"Unknown", city:text(r.city)||null, website,
     contact_department:text(r.contact_department)||null, contact_name:text(r.contact_name)||null,
     email, linkedin_url:null, research_notes:text(r.research_notes)||null,
@@ -106,11 +120,12 @@ function normalize(r, segment, runDate) {
 }
 (async()=>{
   const runDate=new Date().toISOString().slice(0,10);
-  const existing=await selectRows(TABLE, [["select","lead_segment,organisation_name,country,website,email,source,research_notes"],["limit","20000"]]);
+  const existing=await selectRows(TABLE, [["select","id,lead_segment,organisation_name,country,website,email,source,research_notes"],["limit","20000"]]);
   const existingKeys=new Set(existing.map(key));
   const existingNames=existing.map(r=>text(r.organisation_name)).filter(Boolean);
-  const stats={generated:0,duplicates:0,invalid:0,inserted:0,emails:0,bySegment:{}};
+  const stats={generated:0,duplicates:0,reclassified:0,invalid:0,inserted:0,emails:0,bySegment:{}};
   const candidates=[];
+  const existingByOrganisation=new Map(existing.filter(r=>r.id).map(r=>[organisationKey(r),r]));
   for(const [segment,query] of SEGMENTS) {
     const before=candidates.length;
     try {
@@ -119,6 +134,16 @@ function normalize(r, segment, runDate) {
       for(const r of rows) {
         const n=normalize(r,segment,runDate);
         if(!n.organisation_name||!n.website){stats.invalid++;continue;}
+        const prior=existingByOrganisation.get(organisationKey(n));
+        if(prior && text(prior.lead_segment)!==n.lead_segment) {
+          const patch={lead_segment:n.lead_segment, updated_at:n.updated_at, last_seen_at:n.last_seen_at};
+          if(n.website) patch.website=n.website;
+          if(n.email) patch.email=n.email;
+          await updateRows(TABLE, [["id","eq."+prior.id]], patch);
+          existingByOrganisation.set(organisationKey(n), {...prior,...patch});
+          stats.reclassified++;
+          continue;
+        }
         if(existingKeys.has(key(n))||candidates.some(x=>key(x)===key(n))){stats.duplicates++;continue;}
         candidates.push(n);
       }
@@ -143,7 +168,8 @@ function normalize(r, segment, runDate) {
   const body=[
     "CRM Discovery v2 completed","Date: "+runDate,"",
     "Generated: "+stats.generated,"New candidates: "+candidates.length,
-    "Saved/upsert response: "+stats.inserted,"Duplicates rejected: "+stats.duplicates,
+      "Saved/upsert response: "+stats.inserted,"Duplicates rejected: "+stats.duplicates,
+      "Existing organisations reclassified: "+stats.reclassified,
     "Invalid rows rejected: "+stats.invalid,"Verified public emails: "+stats.emails,
     "Official-page scans: "+scans,"","By segment:",JSON.stringify(stats.bySegment,null,2),
     "","No emails were sent to prospects."
