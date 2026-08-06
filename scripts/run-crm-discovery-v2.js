@@ -54,7 +54,13 @@ async function searchRows(segment, query, existing) {
   });
   const raw=await response.text();
   if(!response.ok) throw new Error("OpenAI "+response.status+" "+raw.slice(0,400));
-  const out=JSON.parse(raw).output_text||"";
+  const parsed=JSON.parse(raw);
+  const out=parsed.output_text || (parsed.output||[])
+    .flatMap(item => item.content || [])
+    .map(item => item.text || item.value || "")
+    .filter(Boolean)
+    .join("\n");
+  if(!out) throw new Error("OpenAI returned no text output");
   return parseJson(out);
 }
 async function pageEmails(website) {
