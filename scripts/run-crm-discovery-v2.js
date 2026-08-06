@@ -50,6 +50,7 @@ async function searchRows(segment, query, existing) {
     "Also search schools across the Middle East and Europe, including UAE, Saudi Arabia, Qatar, Bahrain, Kuwait, Oman, Jordan, Turkey, France, Germany, Spain, Italy, Netherlands, Switzerland, Scandinavia, Ireland, and the United Kingdom.",
     "For the UK, prioritize independent/private schools, prep schools, boarding schools, public schools, academies, school groups, outdoor education departments, geography/ecology departments, and service-learning or overseas trip coordinators. Search by city, county, school association, and official school website.",
     "Prefer small and medium organisations, not famous repeated brands.",
+    "Return up to 50 genuinely different organisations for this segment in this batch. Do not stop after a few well-known names. Cover every listed region and search multiple city/state variations before returning results.",
     "For every organisation provide the official website and the exact source URL where it was found. Do not invent emails. Email may be null.",
     "Do not return any organisation already in this list: " + existing.join("; "),
     "Return a JSON object with a rows array. Each row must use keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
@@ -73,7 +74,7 @@ async function searchRows(segment, query, existing) {
           }}
         }
       }}},
-      max_output_tokens:16000
+      max_output_tokens:32000
     })
   });
   const raw=await response.text();
@@ -123,7 +124,7 @@ function normalize(r, segment, runDate) {
   const existing=await selectRows(TABLE, [["select","id,lead_segment,organisation_name,country,website,email,source,research_notes"],["limit","20000"]]);
   const existingKeys=new Set(existing.map(key));
   const existingNames=existing.map(r=>text(r.organisation_name)).filter(Boolean);
-  const stats={generated:0,duplicates:0,reclassified:0,invalid:0,inserted:0,emails:0,bySegment:{}};
+  const stats={generated:0,duplicates:0,reclassified:0,invalid:0,inserted:0,emails:0,existingEmails:0,existingEmailScans:0,bySegment:{}};
   const candidates=[];
   const existingByOrganisation=new Map(existing.filter(r=>r.id).map(r=>[organisationKey(r),r]));
   for(const [segment,query] of SEGMENTS) {
@@ -153,6 +154,16 @@ function normalize(r, segment, runDate) {
     stats.bySegment[segment]=stats.bySegment[segment]||{generated:candidates.length-before};
   }
   let scans=0;
+  const existingEmailLimit=Number(process.env.CRM_EXISTING_EMAIL_SCANS||1000);
+  for (const prior of existing) {
+    if (prior.email || !prior.website || stats.existingEmailScans>=existingEmailLimit) continue;
+    stats.existingEmailScans++;
+    const emails=await pageEmails(prior.website);
+    if (emails[0]) {
+      await updateRows(TABLE, [["id","eq."+prior.id]], {email:emails[0], updated_at:new Date().toISOString(), last_seen_at:new Date().toISOString(), research_notes:[prior.research_notes,"Public email found on official page: "+emails[0]].filter(Boolean).join(" ")});
+      stats.existingEmails++;
+    }
+  }
   for(const row of candidates) {
     if(!row.email&&scans<Number(process.env.CRM_MAX_EMAIL_SCANS||250)) {
       scans++;
@@ -170,6 +181,7 @@ function normalize(r, segment, runDate) {
     "Generated: "+stats.generated,"New candidates: "+candidates.length,
       "Saved/upsert response: "+stats.inserted,"Duplicates rejected: "+stats.duplicates,
       "Existing organisations reclassified: "+stats.reclassified,
+      "Existing emails found: "+stats.existingEmails,"Existing email scans: "+stats.existingEmailScans,
     "Invalid rows rejected: "+stats.invalid,"Verified public emails: "+stats.emails,
     "Official-page scans: "+scans,"","By segment:",JSON.stringify(stats.bySegment,null,2),
     "","No emails were sent to prospects."
