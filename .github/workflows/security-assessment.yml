@@ -1,0 +1,28 @@
+name: Security assessment
+on:
+  schedule:
+    - cron: '0 2 * * 1,4'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run authorized assessment agent
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SECURITY_REPORT_TO: ${{ secrets.SECURITY_REPORT_TO }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SECURITY_FROM_EMAIL: ${{ secrets.SECURITY_FROM_EMAIL }}
+          SECURITY_TARGETS_JSON: ${{ secrets.SECURITY_TARGETS_JSON }}
+          SECURITY_ASSESSMENT_COMMAND: ${{ secrets.SECURITY_ASSESSMENT_COMMAND }}
+        run: |
+          test -n "$SECURITY_TARGETS_JSON"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SECURITY_ASSESSMENT_COMMAND"
+          eval "$SECURITY_ASSESSMENT_COMMAND"
