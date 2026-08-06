@@ -307,6 +307,8 @@ async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 730,
   const now = Date.now();
   const cutoff = now - olderThanDays * 24 * 60 * 60 * 1000;
   const seenThreads = new Set();
+  const seenRecipients = new Set();
+  const blockedRecipients = new Set(["dan.fuzecoteer@gmail.com", "dan.fuzecoteer@gmai.com"]);
   const candidates = [];
 
   for (const message of messages) {
@@ -324,6 +326,10 @@ async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 730,
     if (!latestSent) continue;
     const to = emailAddress(latestSent.to);
     if (!to) continue;
+    const normalizedTo = to.toLowerCase();
+    if (blockedRecipients.has(normalizedTo) || seenRecipients.has(normalizedTo)) continue;
+    const recentRecipientMessages = await searchMessages({ query: `in:sent to:${to} newer_than:${olderThanDays}d`, maxResults: 10 }).catch(() => []);
+    if (recentRecipientMessages.length) continue;
 
     const inboundAfterLatestSent = sorted.some((item) => !isOwnMessage(item) && item.internalDate > latestSent.internalDate);
     if (inboundAfterLatestSent) continue;
@@ -334,6 +340,7 @@ async function reengagementCandidates({ olderThanDays = 30, newerThanDays = 730,
     }).catch(() => []);
     if (existingDrafts.length) continue;
 
+    seenRecipients.add(normalizedTo);
     candidates.push({
       to,
       subject: latestSent.subject || latest.subject || "Following up",
