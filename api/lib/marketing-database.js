@@ -887,7 +887,7 @@ function readAutomationBrief(slug) {
   return "";
 }
 
-async function generateJsonRows({ label, prompt, system, jsonSchema, maxOutputTokens = 6000 }) {
+async function generateJsonRows({ label, prompt, system, jsonSchema, maxOutputTokens = 6000, webSearch = false }) {
   const apiKey = requireEnv("OPENAI_API_KEY");
   const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
   const body = {
@@ -897,6 +897,7 @@ async function generateJsonRows({ label, prompt, system, jsonSchema, maxOutputTo
       { role: "user", content: [{ type: "input_text", text: prompt }] },
     ].filter(Boolean),
     max_output_tokens: maxOutputTokens,
+    ...(webSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
     text: jsonSchema ? {
       format: {
         type: "json_schema",
@@ -1265,6 +1266,7 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
             label: `cold email CRM ${item.segment} batch ${batchNumber} size ${attemptSize}`,
             maxOutputTokens: Math.min(7000, Math.max(2500, attemptSize * 240)),
             jsonSchema: crmLeadArraySchema(),
+            webSearch: true,
             system: "Return only valid JSON. Use public information only. Do not write outreach emails. Do not invent private contacts, private personal data, evidence, intent, LinkedIn details, social activity, emails, or unverifiable figures. If evidence is uncertain, say so in research_notes and lower confidence.",
             prompt: [
               briefPrompt || [
@@ -1282,6 +1284,8 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
               "Return a JSON array only. Do not include markdown, code fences, comments, or commentary.",
               "Keep all fields concise. Keep research_notes under 700 characters. Keep all other string fields under 140 characters.",
               "If you cannot verify a public email, set email to null. Never invent or guess an email address.",
+              "Use web search for every batch. Search the official organisation website, then follow Contact us, Help, Customer Service, Partnerships, CSR, Sustainability, Admissions or country-selector pages. Record the exact official source URL for each verified email.",
+              "Prefer many distinct real organisations over repeating famous companies. Include small and medium Malaysian companies, schools, travel agencies, tour operators and volunteer-travel platforms, not only large household-name corporates.",
               "Do not put commas, URLs, organisation names, or notes into lead_segment. lead_segment must exactly equal the requested segment string and nothing else.",
               "Do not return duplicate organisations within this batch.",
             ].filter(Boolean).join("\n"),
