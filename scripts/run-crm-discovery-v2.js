@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const { selectRows, updateRows, upsertRows } = require("../api/lib/supabase-admin");
-const { sendEmail } = require("../api/lib/gmail");
+const { professionalGmailContacts, sendEmail } = require("../api/lib/gmail");
 
 const TABLE = "marketing_cold_email_leads";
 const SEGMENTS = [
@@ -51,6 +51,7 @@ async function searchRows(segment, query, existing) {
     "For the UK, prioritize independent/private schools, prep schools, boarding schools, public schools, academies, school groups, outdoor education departments, geography/ecology departments, and service-learning or overseas trip coordinators. Search by city, county, school association, and official school website.",
     "Prefer small and medium organisations, not famous repeated brands.",
     "Return up to 50 genuinely different organisations for this segment in this batch. Do not stop after a few well-known names. Cover every listed region and search multiple city/state variations before returning results.",
+    "Where publicly available, identify a named professional contact and their role from an official staff page, public professional profile, official directory, or public work contact page. Use only professional contact details published for work; never infer or collect private personal email addresses. Prefer a verified work email, otherwise use a role email or leave email null.",
     "For every organisation provide the official website and the exact source URL where it was found. Do not invent emails. Email may be null.",
     "Do not return any organisation already in this list: " + existing.join("; "),
     "Return a JSON object with a rows array. Each row must use keys: lead_segment, organisation_name, country, city, website, contact_department, contact_name, email, research_notes, likely_need, recommended_offer, personalization_angle, priority, next_action, source, confidence.",
@@ -66,10 +67,13 @@ async function searchRows(segment, query, existing) {
       text:{format:{type:"json_schema",name:"crm_leads",strict:true,schema:{
         type:"object",additionalProperties:false,required:["rows"],properties:{
           rows:{type:"array",items:{type:"object",additionalProperties:false,
-            required:["lead_segment","organisation_name","country","website","email","source"],
+            required:["lead_segment","organisation_name","country","city","website","contact_department","contact_name","email","research_notes","likely_need","recommended_offer","personalization_angle","priority","next_action","source","confidence"],
             properties:{
-              lead_segment:{type:"string"},organisation_name:{type:"string"},country:{type:"string"},
-              website:{type:["string","null"]},email:{type:["string","null"]},source:{type:["string","null"]}
+              lead_segment:{type:"string"},organisation_name:{type:"string"},country:{type:"string"},city:{type:["string","null"]},
+              website:{type:["string","null"]},contact_department:{type:["string","null"]},contact_name:{type:["string","null"]},
+              email:{type:["string","null"]},research_notes:{type:["string","null"]},likely_need:{type:["string","null"]},
+              recommended_offer:{type:["string","null"]},personalization_angle:{type:["string","null"]},priority:{type:"string"},
+              next_action:{type:["string","null"]},source:{type:["string","null"]},confidence:{type:["number","null"]}
             }
           }}
         }
@@ -127,6 +131,15 @@ function normalize(r, segment, runDate) {
   const stats={generated:0,duplicates:0,reclassified:0,invalid:0,inserted:0,emails:0,existingEmails:0,existingEmailScans:0,bySegment:{}};
   const candidates=[];
   const existingByOrganisation=new Map(existing.filter(r=>r.id).map(r=>[organisationKey(r),r]));
+  let gmailContacts=[];
+  if (process.env.CRM_GMAIL_CONTACT_SCAN !== "false") {
+    gmailContacts=await professionalGmailContacts({maxResults:Number(process.env.CRM_GMAIL_CONTACT_MAX||500)}).catch(e => { console.error("Gmail contact scan skipped: "+e.message); return []; });
+    for (const contact of gmailContacts) {
+      const n=normalize({...contact, lead_segment:"Network / Referral Partner"}, "Network / Referral Partner", runDate);
+      if (!n.organisation_name || !n.email || existing.some(x=>text(x.email).toLowerCase()===n.email) || candidates.some(x=>text(x.email).toLowerCase()===n.email)) continue;
+      candidates.push(n);
+    }
+  }
   for(const [segment,query] of SEGMENTS) {
     const before=candidates.length;
     try {
@@ -178,7 +191,7 @@ function normalize(r, segment, runDate) {
   }
   const body=[
     "CRM Discovery v2 completed","Date: "+runDate,"",
-    "Generated: "+stats.generated,"New candidates: "+candidates.length,
+      "Generated: "+stats.generated,"New candidates: "+candidates.length,"Gmail professional contacts found: "+gmailContacts.length,
       "Saved/upsert response: "+stats.inserted,"Duplicates rejected: "+stats.duplicates,
       "Existing organisations reclassified: "+stats.reclassified,
       "Existing emails found: "+stats.existingEmails,"Existing email scans: "+stats.existingEmailScans,

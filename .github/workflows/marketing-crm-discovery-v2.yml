@@ -29,6 +29,8 @@ jobs:
       CRM_MAX_ROWS_PER_SEGMENT: "100"
       CRM_MAX_EMAIL_SCANS: "250"
       CRM_EXISTING_EMAIL_SCANS: "1000"
+      CRM_GMAIL_CONTACT_SCAN: "true"
+      CRM_GMAIL_CONTACT_MAX: "500"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

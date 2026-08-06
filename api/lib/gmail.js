@@ -206,6 +206,51 @@ function emailAddress(value) {
   return match ? match[0].trim().toLowerCase() : "";
 }
 
+function displayName(value) {
+  const match = String(value || "").match(/^\s*"?([^"<]+?)"?\s*</);
+  return match ? match[1].trim() : "";
+}
+
+function isFreeMailbox(email) {
+  return /@(gmail|googlemail|yahoo|hotmail|outlook|icloud|protonmail|aol)\./i.test(email);
+}
+
+async function professionalGmailContacts({ maxResults = 500, newerThanDays = 730 } = {}) {
+  const queries = [
+    `newer_than:${newerThanDays}d -in:spam -in:trash`,
+    `in:sent newer_than:${newerThanDays}d -in:spam -in:trash`,
+  ];
+  const messages = [];
+  const seen = new Set();
+  for (const query of queries) {
+    for (const item of await searchMessages({ query, maxResults })) {
+      if (!seen.has(item.id)) { seen.add(item.id); messages.push(item); }
+      if (messages.length >= maxResults) break;
+    }
+    if (messages.length >= maxResults) break;
+  }
+  const contacts = new Map();
+  for (const item of messages) {
+    const full = await getMessage(item.id).catch(() => null);
+    if (!full) continue;
+    const addresses = [full.from, full.to].map(emailAddress).filter(Boolean);
+    for (const email of addresses) {
+      if (email === emailAddress(process.env.GMAIL_FROM || "dan.fuzecoteer@gmail.com") || isFreeMailbox(email)) continue;
+      const domain = email.split("@")[1];
+      if (!domain) continue;
+      contacts.set(email, {
+        email,
+        contact_name: displayName(full.from) || null,
+        organisation_name: domain.split(".").slice(-2).join(" "),
+        website: `https://${domain}`,
+        research_notes: `Imported from Gmail thread ${full.threadId}; subject: ${full.subject || "(no subject)"}`,
+        source: `Gmail thread ${full.threadId}`,
+      });
+    }
+  }
+  return [...contacts.values()];
+}
+
 function extractTextPayload(part) {
   if (!part) return "";
   if (part.mimeType === "text/plain" && part.body && part.body.data) {
@@ -456,4 +501,5 @@ module.exports = {
   recentSentEmailExamples,
   recentAutomationNotes,
   sendEmail,
+  professionalGmailContacts,
 };
