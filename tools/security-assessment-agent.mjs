@@ -52,9 +52,9 @@ async function sendReport(markdown) {
   const token = await tokenResponse.json();
   if (!tokenResponse.ok || !token.access_token) throw new Error("Gmail OAuth token request failed.");
   const subject = `Security assessment ${new Date().toISOString().slice(0, 10)}`;
-  const raw = [`From: ${from}`, `To: ${to}`, "Content-Type: text/plain; charset=utf-8", `Subject: ${subject}`, "", markdown].join("\\r\\n");
+  const raw = [`From: ${from}`, `To: ${to}`, "Content-Type: text/plain; charset=utf-8", `Subject: ${subject}`, "", markdown].join("\r\n");
   const encoded = Buffer.from(raw).toString("base64url");
   const sent = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ raw: encoded }) });
-  if (!sent.ok) throw new Error(`Gmail send failed: ${sent.status}`);
+  if (!sent.ok) throw new Error(`Gmail send failed: ${sent.status} ${await sent.text()}`);
   console.log("Security report email sent.");
 }
