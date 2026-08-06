@@ -245,6 +245,7 @@ async function main() {
         console.log(`Upserted ${result.saved.length} cold-email CRM rows into Supabase`);
         statusLines.push("Database updated: marketing_cold_email_leads");
         statusLines.push(`Rows upserted: ${result.saved.length}`);
+        statusLines.push(`New CRM organisations researched this run: ${Array.isArray(result.rows) ? result.rows.length : 0}`);
         statusLines.push(`Generation limit used: ${result.requestedLimit}`);
         if (Array.isArray(result.rows) && result.rows.length) {
           const generatedCounts = countRowsBySegment(result.rows);
