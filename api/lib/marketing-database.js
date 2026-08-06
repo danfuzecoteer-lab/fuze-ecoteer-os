@@ -630,7 +630,7 @@ function dedupeRowsByKey(rows) {
 
 async function fetchExistingColdEmailLeadsSnapshot() {
   const rows = await selectRows("marketing_cold_email_leads", [
-    ["select", "lead_segment,organisation_name,country,email,last_drafted_at,status"],
+    ["select", "*"],
     ["limit", "20000"],
   ]);
 
@@ -1377,11 +1377,15 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
   }
 
   const deduped = dedupeRowsByKey(normalized);
-  const enriched = await enrichColdEmailLeadEmails(deduped, process.env.CRM_EMAIL_DISCOVERY_MAX_SCANS || 250);
+  const scanLimit = process.env.CRM_EMAIL_DISCOVERY_MAX_SCANS || 250;
+  const enriched = await enrichColdEmailLeadEmails(deduped, scanLimit);
+  const existingNullEmailRows = existingSnapshot.rows.filter((row) => !isValidEmail(row.email) && cleanText(row.website));
+  const enrichedExisting = await enrichColdEmailLeadEmails(existingNullEmailRows, scanLimit);
+  const existingEmailUpdates = enrichedExisting.filter((row, index) => row.email && row.email !== existingNullEmailRows[index]?.email);
 
   if (dryRun) {
     return {
-      rows: enriched,
+      rows: dedupeRowsByKey([...enriched, ...existingEmailUpdates]),
       saved: [],
       warning: warnings.join(" | ") || null,
       existingCounts: existingSnapshot.counts,
@@ -1389,9 +1393,10 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
       plan,
     };
   }
-  const saved = await upsertRows("marketing_cold_email_leads", enriched, "lead_segment,organisation_name,country");
+  const rowsToSave = dedupeRowsByKey([...enriched, ...existingEmailUpdates]);
+  const saved = await upsertRows("marketing_cold_email_leads", rowsToSave, "lead_segment,organisation_name,country");
   return {
-    rows: enriched,
+    rows: rowsToSave,
     saved,
     warning: warnings.join(" | ") || null,
     existingCounts: existingSnapshot.counts,
