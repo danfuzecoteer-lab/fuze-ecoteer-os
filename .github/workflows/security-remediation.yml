@@ -1,0 +1,27 @@
+name: Security remediation
+on:
+  schedule:
+    - cron: '0 2 * * 2,5'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: security-remediation
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run remediation agent
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECURITY_TARGETS_JSON: ${{ secrets.SECURITY_TARGETS_JSON }}
+          SECURITY_REMEDIATION_COMMAND: ${{ secrets.SECURITY_REMEDIATION_COMMAND }}
+        run: |
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SECURITY_REMEDIATION_COMMAND"
+          eval "$SECURITY_REMEDIATION_COMMAND"
