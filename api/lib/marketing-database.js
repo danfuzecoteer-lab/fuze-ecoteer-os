@@ -648,12 +648,10 @@ async function fetchExistingColdEmailLeadsSnapshot() {
   };
 }
 
-function existingOrgPrompt(names, maxNames = 160) {
+function existingOrgPrompt(names, maxNames = 20000) {
   const uniqueNames = [...new Set((names || []).map((name) => cleanText(name)).filter(Boolean))];
   if (!uniqueNames.length) return "";
-  return uniqueNames
-    .slice(0, maxNames)
-    .join("; ");
+  return `Do not return any of these organisations because they are already in the CRM: ${uniqueNames.slice(0, maxNames).join("; ")}`;
 }
 
 function combinedLeadText(row) {
@@ -1285,7 +1283,7 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
               "Keep all fields concise. Keep research_notes under 700 characters. Keep all other string fields under 140 characters.",
               "If you cannot verify a public email, set email to null. Never invent or guess an email address.",
               "Use web search for every batch. Search the official organisation website, then follow Contact us, Help, Customer Service, Partnerships, CSR, Sustainability, Admissions or country-selector pages. Record the exact official source URL for each verified email.",
-              "Prefer many distinct real organisations over repeating famous companies. Include small and medium Malaysian companies, schools, travel agencies, tour operators and volunteer-travel platforms, not only large household-name corporates.",
+              "Use varied search queries in every batch, such as Malaysian company directories, SME Malaysia, industry associations, chamber/member directories, school directories, travel-agent directories, tourism boards, and official organisation sites. Prefer many distinct real organisations over repeating famous companies. Include small and medium Malaysian companies, schools, travel agencies, tour operators and volunteer-travel platforms, not only large household-name corporates.",
               "Do not put commas, URLs, organisation names, or notes into lead_segment. lead_segment must exactly equal the requested segment string and nothing else.",
               "Do not return duplicate organisations within this batch.",
             ].filter(Boolean).join("\n"),
@@ -1312,9 +1310,11 @@ async function updateColdEmailCrmDatabase({ runDate, limit = 2500, dryRun = fals
     }
   }
 
+  const existingKeys = new Set(existingSnapshot.rows.map((row) => [cleanText(row.lead_segment).toLowerCase(), cleanText(row.organisation_name).toLowerCase(), cleanText(row.country).toLowerCase()].join("|")));
   const normalized = dedupeRowsByKey(rows
     .map((row) => normalizeColdEmailLead(row, runDate))
-    .filter((row) => row && row.organisation_name));
+    .filter((row) => row && row.organisation_name)
+    .filter((row) => !existingKeys.has([cleanText(row.lead_segment).toLowerCase(), cleanText(row.organisation_name).toLowerCase(), cleanText(row.country).toLowerCase()].join("|")));
 
   const currentTravelCount = normalized.filter((row) => row.lead_segment === "Network / Referral Partner").length;
   const travelPlan = plan.find((item) => item.segment === "Network / Referral Partner");
