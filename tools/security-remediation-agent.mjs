@@ -1,0 +1,11 @@
+const supabase = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabase || !key) throw new Error("Supabase secrets are missing.");
+const headers = { apikey: key, Authorization: `Bearer ${key}` };
+const response = await fetch(`${supabase}/rest/v1/security_findings?status=in.(open,in_progress)&severity=in.(critical,high)&select=*&order=created_at.asc`, { headers });
+if (!response.ok) throw new Error(`Unable to read security findings: ${response.status}`);
+const findings = await response.json();
+const runId = `remediation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+const saved = await fetch(`${supabase}/rest/v1/security_remediation_runs`, { method: "POST", headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ run_id: runId, status: "completed", summary: { open_critical_high: findings.length, action: "review_required" }, pull_requests: [] }) });
+if (!saved.ok) throw new Error(`Unable to save remediation run: ${saved.status}`);
+console.log(JSON.stringify({ runId, findings: findings.length, message: "Findings recorded for human-approved remediation." }));
