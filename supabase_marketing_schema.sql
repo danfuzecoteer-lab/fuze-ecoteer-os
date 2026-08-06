@@ -142,6 +142,8 @@ create table if not exists public.marketing_cold_email_leads (
   last_draft_id text,
   last_draft_message_id text,
   draft_count integer not null default 0,
+  last_email_sent_at timestamptz,
+  follow_up_due_at timestamptz,
   source text,
   confidence numeric check (confidence is null or (confidence >= 0 and confidence <= 1)),
   run_date date,
@@ -175,7 +177,9 @@ alter table public.marketing_cold_email_leads
   add column if not exists last_drafted_by_agent text,
   add column if not exists last_draft_id text,
   add column if not exists last_draft_message_id text,
-  add column if not exists draft_count integer not null default 0;
+  add column if not exists draft_count integer not null default 0,
+  add column if not exists last_email_sent_at timestamptz,
+  add column if not exists follow_up_due_at timestamptz;
 
 alter table public.marketing_research_rows enable row level security;
 alter table public.marketing_competitor_weekly_snapshots enable row level security;
