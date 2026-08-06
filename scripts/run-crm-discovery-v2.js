@@ -49,12 +49,23 @@ async function searchRows(segment, query, existing) {
       model:process.env.OPENAI_MODEL||"gpt-5.4-mini",
       input:prompt,
       tools:[{type:"web_search_preview"}],
-      max_output_tokens:6000
+      text:{format:{type:"json_schema",name:"crm_leads",strict:true,schema:{
+        type:"array",items:{type:"object",additionalProperties:false,
+          required:["lead_segment","organisation_name","country","website","email","source"],
+          properties:{
+            lead_segment:{type:"string"},organisation_name:{type:"string"},country:{type:"string"},
+            website:{type:["string","null"]},email:{type:["string","null"]},source:{type:["string","null"]}
+          }
+        }
+      }}},
+      max_output_tokens:16000
     })
   });
   const raw=await response.text();
   if(!response.ok) throw new Error("OpenAI "+response.status+" "+raw.slice(0,400));
-  const out=JSON.parse(raw).output_text||"";
+  const parsed=JSON.parse(raw);
+  const out=parsed.output_text || (parsed.output||[]).flatMap(item=>item.content||[]).map(item=>item.text||"").filter(Boolean).join("\n");
+  if(!out) throw new Error("OpenAI returned no text output");
   return parseJson(out);
 }
 async function pageEmails(website) {
