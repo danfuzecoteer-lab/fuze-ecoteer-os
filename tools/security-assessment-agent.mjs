@@ -35,4 +35,26 @@ for (const finding of findings) {
   const saved = await fetch(`${supabase}/rest/v1/security_findings`, { method: "POST", headers: { ...auth, Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify({ ...finding, assessment_id: row.id }) });
   if (!saved.ok) throw new Error(`Supabase finding insert failed: ${saved.status}`);
 }
+await sendReport(assessment.report_markdown);
 console.log(JSON.stringify({ runId, findings: findings.length, sites: targets.length }));
+
+async function sendReport(markdown) {
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const from = process.env.GMAIL_FROM;
+  const to = process.env.SECURITY_REPORT_TO;
+  if (!clientId || !clientSecret || !refreshToken || !from || !to) {
+    console.log("Email skipped: Gmail OAuth secrets or SECURITY_REPORT_TO are not configured.");
+    return;
+  }
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }) });
+  const token = await tokenResponse.json();
+  if (!tokenResponse.ok || !token.access_token) throw new Error("Gmail OAuth token request failed.");
+  const subject = `Security assessment ${new Date().toISOString().slice(0, 10)}`;
+  const raw = [`From: ${from}`, `To: ${to}`, "Content-Type: text/plain; charset=utf-8", `Subject: ${subject}`, "", markdown].join("\\r\\n");
+  const encoded = Buffer.from(raw).toString("base64url");
+  const sent = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token.access_token}`, "Content-Type": "application/json" }, body: JSON.stringify({ raw: encoded }) });
+  if (!sent.ok) throw new Error(`Gmail send failed: ${sent.status}`);
+  console.log("Security report email sent.");
+}
