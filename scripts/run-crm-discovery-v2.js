@@ -128,7 +128,7 @@ function normalize(r, segment, runDate) {
   const existing=await selectRows(TABLE, [["select","id,lead_segment,organisation_name,country,website,email,source,research_notes"],["limit","20000"]]);
   const existingKeys=new Set(existing.map(key));
   const existingNames=existing.map(r=>text(r.organisation_name)).filter(Boolean);
-  const stats={generated:0,duplicates:0,reclassified:0,invalid:0,inserted:0,emails:0,existingEmails:0,existingEmailScans:0,bySegment:{}};
+  const stats={generated:0,duplicates:0,manualSegmentsProtected:0,invalid:0,inserted:0,emails:0,existingEmails:0,existingEmailScans:0,bySegment:{}};
   const candidates=[];
   const existingByOrganisation=new Map(existing.filter(r=>r.id).map(r=>[organisationKey(r),r]));
   let gmailContacts=[];
@@ -149,15 +149,9 @@ function normalize(r, segment, runDate) {
         const n=normalize(r,segment,runDate);
         if(!n.organisation_name||!n.website){stats.invalid++;continue;}
         const prior=existingByOrganisation.get(organisationKey(n));
-        if(prior && text(prior.lead_segment)!==n.lead_segment) {
-          const patch={lead_segment:n.lead_segment, updated_at:n.updated_at, last_seen_at:n.last_seen_at};
-          if(n.website) patch.website=n.website;
-          if(n.email) patch.email=n.email;
-          await updateRows(TABLE, [["id","eq."+prior.id]], patch);
-          existingByOrganisation.set(organisationKey(n), {...prior,...patch});
-          stats.reclassified++;
-          continue;
-        }
+        // Existing rows may have been manually corrected in Supabase. Never overwrite
+        // their chosen segment during discovery; classification applies only to new rows.
+        if(prior) { stats.duplicates++; stats.manualSegmentsProtected++; continue; }
         if(existingKeys.has(key(n))||candidates.some(x=>key(x)===key(n))){stats.duplicates++;continue;}
         candidates.push(n);
       }
@@ -193,7 +187,7 @@ function normalize(r, segment, runDate) {
     "CRM Discovery v2 completed","Date: "+runDate,"",
       "Generated: "+stats.generated,"New candidates: "+candidates.length,"Gmail professional contacts found: "+gmailContacts.length,
       "Saved/upsert response: "+stats.inserted,"Duplicates rejected: "+stats.duplicates,
-      "Existing organisations reclassified: "+stats.reclassified,
+      "Existing segment choices protected: "+stats.manualSegmentsProtected,
       "Existing emails found: "+stats.existingEmails,"Existing email scans: "+stats.existingEmailScans,
     "Invalid rows rejected: "+stats.invalid,"Verified public emails: "+stats.emails,
     "Official-page scans: "+scans,"","By segment:",JSON.stringify(stats.bySegment,null,2),
