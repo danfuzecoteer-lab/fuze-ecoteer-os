@@ -254,6 +254,50 @@ function fallbackOffer(profile) {
   return "Fuze Ecoteer runs three Perhentian conservation volunteer projects: PTP for turtle conservation, PMRS for marine research and PEEP for eco education. We are looking for thoughtful partners who can help suitable travellers, students or career explorers find these projects.";
 }
 
+const EDUCATION_BROCHURES = [
+  "Recycling and clean up programmes: https://canva.link/7ivirumm3vtumrc",
+  "Multi day programmes: https://canva.link/jssj179y0qnlrqd",
+];
+const CORPORATE_BROCHURES = [
+  "HRDF claimable and CSR recycling workshops and clean-ups: https://canva.link/182yax134kmm57h",
+  "Multi-day CSR team building with a cause programmes: https://canva.link/f86niq028sesto8",
+];
+const TRAVEL_PROJECTS = [
+  "Perhentian Turtle Project: https://www.perhentianturtleproject.org/",
+  "Perhentian Marine Research Project: https://www.marineresearchstation.org/",
+];
+
+function requiredAudienceContent(profile) {
+  if (profile.name === "Education Outreach Finder") {
+    return [
+      "We have run programmes for children as young as 3 years old. Our general brochures are:",
+      ...EDUCATION_BROCHURES,
+    ].join("\n");
+  }
+  if (profile.name === "Corporate Outreach Finder") {
+    return [
+      "We have run multi day programmes for groups as large as 350 pax. Here are brochures explaining more:",
+      ...CORPORATE_BROCHURES,
+    ].join("\n");
+  }
+  if (profile.name === "Travel Outreach Finder") return TRAVEL_PROJECTS.join("\n");
+  return "";
+}
+
+function applyEmailRules(profile, body) {
+  let result = cleanText(body).replace(/\bBest,?\s*(?=\nDaniel\b)/gi, "Many thanks,");
+  const required = requiredAudienceContent(profile);
+  if (required && !required.split("\n").every((line) => result.includes(line))) {
+    result = `${result}\n\n${required}`;
+  }
+  result = result.replace(/\n\s*Best,?\s*$/i, "\nMany thanks,");
+  if (!/\nMany thanks,\s*\nDaniel\s*\nFuze Ecoteer\s*$/i.test(result)) {
+    result = result.replace(/\n(?:Many thanks,|Best,)\s*\nDaniel\s*\nFuze Ecoteer\s*$/i, "");
+    result = `${result.trim()}\n\nMany thanks,\nDaniel\nFuze Ecoteer`;
+  }
+  return result;
+}
+
 function fallbackDraftPlans({ profile, leads }) {
   return leads.map((lead) => ({
     to: cleanText(lead.email),
@@ -267,7 +311,7 @@ function fallbackDraftPlans({ profile, leads }) {
       "",
       "Would it be useful if I sent over a short outline of the programme options and how they could work for your audience or team?",
       "",
-      "Best,",
+      "Many thanks,",
       "Daniel",
       "Fuze Ecoteer",
     ].join("\n"),
@@ -307,7 +351,9 @@ async function generateDraftPlans({ profile, leads, researchRows, sentExamples, 
             `Offer to promote: ${profile.offer}.`,
             "Tone: warm, commercial, short, credible, human. No fake familiarity. No invented case studies. Mention uncertainty only when needed.",
             "Each body should be 120-190 words, include a relevant first paragraph from the CRM notes, one short offer paragraph, and a simple CTA.",
-            "Use this signature exactly: Best,\\nDaniel\\nFuze Ecoteer",
+            "Never end with Best. Use this signature exactly: Many thanks,\\nDaniel\\nFuze Ecoteer.",
+            `Mandatory audience content: ${requiredAudienceContent(profile)}`,
+            "Include every mandatory audience link exactly once where relevant. Do not omit them to shorten the email.",
             "Return a JSON array with exactly these keys per item: to, subject, body, lead_name, personalization_basis.",
             "Use only the email address from the lead.email field for to.",
             "",
@@ -372,7 +418,7 @@ async function generateReengagementDraftPlans({ profile, candidates, runDate, li
             `Run date in Kuala Lumpur: ${runDate}.`,
             `Task: write up to ${limit} reconnection email drafts.`,
             "Each body should be 80-150 words. Reference the earlier email topic only when the thread summary supports it.",
-            "Use this signature exactly: Best,\\nDaniel\\nFuze Ecoteer",
+            "Never end with Best. Use this signature exactly: Many thanks,\\nDaniel\\nFuze Ecoteer.",
             "Return a JSON array with exactly these keys per item: to, subject, body, lead_name, personalization_basis.",
             "Use only the email address from the candidate.to field for to.",
             "",
@@ -415,7 +461,7 @@ function fallbackReengagementDraftPlans({ candidates }) {
       "",
       "No pressure at all, but if this is still relevant, would it be useful for me to send over a short outline or a couple of options to make it easier to review?",
       "",
-      "Best,",
+      "Many thanks,",
       "Daniel",
       "Fuze Ecoteer",
     ].join("\n"),
@@ -670,10 +716,11 @@ async function createOutreachDrafts({ agentId, runDate, limit = 10, dryRun = fal
     }
 
     try {
+      const finalBody = applyEmailRules(profile, plan.body);
       const draft = await createDraftEmail({
         to: [to],
         subject: cleanText(plan.subject).slice(0, 180) || `${profile.name} outreach`,
-        body: cleanText(plan.body),
+        body: finalBody,
       });
       await markLeadDrafted({ lead: matchingLead, profile, draft, runDate });
       created.push({
