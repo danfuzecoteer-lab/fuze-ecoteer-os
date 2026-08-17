@@ -1,37 +1,40 @@
-name: Marketing CRM Discovery v2
+name: Marketing CRM Update
 
 on:
   schedule:
+    # Sunday 11:07 PM Asia/Kuala_Lumpur. Weekly CRM cold-email research.
     - cron: "7 15 * * 0"
+    # Monday 9:17 AM Asia/Kuala_Lumpur.
+    - cron: "17 1 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-concurrency:
-  group: marketing-crm-discovery-v2
-  cancel-in-progress: false
-
 jobs:
-  discover:
+  update-marketing-crm:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: gpt-5.4-mini
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
       GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
       GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
       GMAIL_FROM: ${{ secrets.GMAIL_FROM }}
-      CRM_REPORT_TO: ${{ secrets.GMAIL_FROM }}
-      CRM_MAX_ROWS_PER_SEGMENT: "100"
-      CRM_MAX_EMAIL_SCANS: "250"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CRM_RESEARCH_LIMIT: "500"
+      CRM_BATCH_SIZE: "20"
+      CRM_TARGET_SCHOOLS: "5000"
+      CRM_TARGET_PRESCHOOLS: "2500"
+      CRM_TARGET_UNIVERSITIES: "2500"
+      CRM_TARGET_CORPORATES: "5000"
+      CRM_TARGET_TRAVEL: "5000"
+      CRM_SCHOOL_DIRECTORY_LIMIT: "100"
+      CRM_SCHOOL_PRIORITY_COUNTRIES: "Malaysia,United Kingdom,Japan,Hong Kong,Singapore,China"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Discover and verify CRM leads
-        run: node scripts/run-crm-discovery-v2.js
+      - name: Update marketing CRM leads
+        run: node scripts/run-cloud-automations.js --group marketing-crm

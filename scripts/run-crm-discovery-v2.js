@@ -3,6 +3,14 @@ const { selectRows, updateRows, upsertRows } = require("../api/lib/supabase-admi
 const { sendEmail } = require("../api/lib/gmail");
 
 const TABLE = "marketing_cold_email_leads";
+const SCHOOL_DIRECTORY_SOURCES = [
+  ["Malaysia", "https://visit.doris.school/schools/malaysia"],
+  ["United Kingdom", "https://visit.doris.school/schools/united-kingdom"],
+  ["Japan", "https://visit.doris.school/schools/japan"],
+  ["Hong Kong", "https://visit.doris.school/schools/hong-kong"],
+  ["Singapore", "https://visit.doris.school/schools/singapore"],
+  ["China", "https://visit.doris.school/schools/china"],
+];
 const SEGMENTS = [
   ["School", "international school OR primary school OR secondary school OR school trips OR outdoor education"],
   ["Tadika / Preschool", "Malaysia preschool OR tadika OR taska OR kindergarten OR childcare"],
@@ -39,6 +47,16 @@ function classifyOrganisation(row, requestedSegment) {
   return requestedSegment;
 }
 async function searchRows(segment, query, existing) {
+  const schoolDirectoryInstructions = segment === "School"
+    ? [
+        "Use these school-directory pages as required discovery sources:",
+        ...SCHOOL_DIRECTORY_SOURCES.map(([country, url]) => `- ${country}: ${url}`),
+        "Prioritize Malaysia and the United Kingdom first, and return at least 15 distinct schools from each of those two directories when the directory has enough entries. Then search Japan, Hong Kong, Singapore, and China for additional schools.",
+        "Open the directory listings and follow each selected school's official website link. Use the school's own website as the organisation website and source URL wherever possible.",
+        "For contact details, inspect only the school's official contact, admissions, partnerships, service-learning, outdoor-education, trips, geography, ecology, or staff pages. Prefer role addresses or publicly listed professional work emails; never infer addresses and never use parent/student personal data.",
+        `Return up to ${process.env.CRM_SCHOOL_DIRECTORY_LIMIT || 100} genuinely different schools in this school batch, weighted toward Malaysia and the United Kingdom.`,
+      ].join("\n")
+    : "";
   const prompt = [
     "Find genuinely new public organisations for Fuze Ecoteer outreach.",
     "Segment: " + segment,
@@ -49,6 +67,7 @@ async function searchRows(segment, query, existing) {
     "For schools in Singapore, Hong Kong, Japan, Taiwan, and China search international schools, private schools, primary and secondary schools, boarding schools, universities, Montessori/preschool groups, outdoor education providers, and school-trip or service-learning programmes. Use local country and city terms, English and local-language variants where useful.",
     "Also search schools across the Middle East and Europe, including UAE, Saudi Arabia, Qatar, Bahrain, Kuwait, Oman, Jordan, Turkey, France, Germany, Spain, Italy, Netherlands, Switzerland, Scandinavia, Ireland, and the United Kingdom.",
     "For the UK, prioritize independent/private schools, prep schools, boarding schools, public schools, academies, school groups, outdoor education departments, geography/ecology departments, and service-learning or overseas trip coordinators. Search by city, county, school association, and official school website.",
+    schoolDirectoryInstructions,
     "Prefer small and medium organisations, not famous repeated brands.",
     "For every organisation provide the official website and the exact source URL where it was found. Do not invent emails. Email may be null.",
     "Do not return any organisation already in this list: " + existing.join("; "),
