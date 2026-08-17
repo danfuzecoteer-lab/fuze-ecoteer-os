@@ -29,6 +29,8 @@ jobs:
       CRM_TARGET_UNIVERSITIES: "2500"
       CRM_TARGET_CORPORATES: "5000"
       CRM_TARGET_TRAVEL: "5000"
+      CRM_SCHOOL_DIRECTORY_LIMIT: "100"
+      CRM_SCHOOL_PRIORITY_COUNTRIES: "Malaysia,United Kingdom,Japan,Hong Kong,Singapore,China"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
