@@ -222,7 +222,20 @@ function segmentSpecificPrompt(segment) {
   if (segment === "Tadika / Preschool") {
     return "Return only preschools, taska, tadika, kindergartens, early-years centres, or daycare groups.";
   }
-  return "Return only schools and school-group leads. Do not include universities, preschools, or corporates.";
+  return [
+    "Return only schools and school-group leads. Do not include universities, preschools, or corporates.",
+    "This is a priority expansion search. Search deeply and separately across the United Kingdom, Hong Kong, mainland China, Japan, South Korea, Singapore, and Taiwan.",
+    "In the United Kingdom prioritise independent/private schools, prep schools, boarding schools, international schools, academies, school groups, sixth-form colleges, geography/ecology departments, outdoor-education departments, service-learning coordinators, and overseas-trip coordinators across London, Manchester, Birmingham, Bristol, Edinburgh, Glasgow, Wales, and major counties.",
+    "In Hong Kong search international schools, English Schools Foundation schools, private schools, colleges, school groups, outdoor-learning providers, and service-learning or overseas-trip departments.",
+    "In mainland China search international schools, bilingual schools, foreign-language schools, private schools, school groups, and education organisations with English-language public websites or international programmes.",
+    "In Japan search international schools, private schools, boarding schools, universities only when the lead is a school-affiliated programme, and outdoor-education or service-learning departments. Use English and Japanese search terms where useful.",
+    "In South Korea search international schools, foreign schools, private schools, boarding schools, school groups, and English-language education organisations. Use English and Korean search terms where useful.",
+    "In Singapore search international schools, independent schools, private schools, school groups, outdoor-education providers, and service-learning or overseas-trip departments.",
+    "In Taiwan search international schools, bilingual schools, private schools, school groups, outdoor-learning providers, and service-learning departments. Use English and Chinese search terms where useful.",
+    "Use multiple search queries per location, school directories, education associations, official school-group directories, local education listings, staff pages, admissions pages, partnerships pages, trip pages, and contact-us pages. Prefer the official school website as the source.",
+    "For each school, open the official website and inspect Contact, About, Admissions, Partnerships, Trips, Service Learning, Outdoor Education, Principal, Headteacher, International Office, and staff-directory pages. Capture a named professional contact and public work email when available; otherwise use a role email or leave email null. Never invent or infer an email.",
+    "Do not return a thin list of famous schools. Keep searching for distinct small, medium, independent, private, international, and regional schools until the requested batch is full. Record the exact source URL and location in research_notes.",
+  ].join(" ");
 }
 
 const TRAVEL_REFERRAL_TERMS = [
